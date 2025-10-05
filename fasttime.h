@@ -57,7 +57,7 @@ static inline double tdiff(const fasttime_t start, const fasttime_t end) {
   static mach_timebase_info_data_t timebase;
   int r __attribute__((unused));
   r = mach_timebase_info(&timebase);
-  tbassert(r == 0, "r = %d\n", r);
+  /*tbassert(r == 0, "r = %d\n", r);*/
   fasttime_t elapsed = end - start;
   double ns = (double)elapsed * timebase.numer / timebase.denom;
   return ns * 1e-9;

@@ -1,0 +1,1 @@
+-std=gnu99 -g -Wall -DNDEBUG -O3 

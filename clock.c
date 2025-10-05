@@ -21,10 +21,17 @@ static unsigned cyc_lo = 0;
 /* Set *hi and *lo to the high and low order bits  of the cycle counter.
    Implementation requires assembly code to use the rdtsc instruction. */
 void access_counter(unsigned* hi, unsigned* lo) {
-  asm("rdtsc; movl %%edx,%0; movl %%eax,%1"   /* Read cycle counter */
-      : "=r"(*hi), "=r"(*lo)                  /* and move results to */
-      : /* No input */                        /* the two outputs */
+#ifdef __aarch64__
+  uint64_t val;
+  asm volatile("mrs %0, cntvct_el0" : "=r"(val));
+  *lo = (unsigned)(val & 0xFFFFFFFF);
+  *hi = (unsigned)(val >> 32);
+#else
+  asm("rdtsc; movl %%edx,%0; movl %%eax,%1"
+      : "=r"(*hi), "=r"(*lo)
+      :
       : "%edx", "%eax");
+#endif
 }
 
 /* Record the current value of the cycle counter. */
