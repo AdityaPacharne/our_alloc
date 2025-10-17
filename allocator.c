@@ -27,6 +27,8 @@
 #include "./allocator_interface.h"
 #include "./memlib.h"
 
+#define PTR_SIZE 8
+
 // Don't call libc malloc!
 #define malloc(...) (USE_MY_MALLOC)
 #define free(...) (USE_MY_FREE)
@@ -68,11 +70,63 @@ int my_check() {
   return 0;
 }
 
+// Free ptr variable
+static void** free_ptr;
+
 // init - Initialize the malloc package.  Called once before any other
 // calls are made.  Since this is a very simple implementation, we just
 // return success.
 int my_init() {
+  unsigned int initial_memory = 20000;
+  void* initial_block = mem_sbrk(initial_memory);
+  if(initial_block == (void*) - 1) {
+    return -1;
+  }
+
+  free_ptr = initial_block;
   return 0;
+}
+
+void* iterate_free_list(void* free_ptr, size_t requested_size, size_t* block_size_found){
+
+    size_t size = ALIGN(requested_size);
+
+    // Creating a copy of free pointer so as to not lose it
+    void* copy_free_ptr = free_ptr;
+
+    while(copy_free_ptr != NULL){
+        
+        // Casting the void pointer to size_t pointer;
+        size_t* size_block = (size_t*)((char*)copy_free_ptr + PTR_SIZE);
+
+        // Getting the actual size from the pointer by derefrecing it
+        size_t actual_size = *size_block;
+
+        if( actual_size >= size + SIZE_T_SIZE + SIZE_T_SIZE ){
+            *block_size_found = actual_size;
+            *size_block++;
+            return copy_free_ptr;
+        }
+        else{
+            void** next_block = (void**)copy_free_ptr;
+            copy_free_ptr = *next_block;
+        }
+    }
+    return (void*) - 1;
+}
+
+void* my_malloc(size_t size) {
+    // Intializing a variable that will store the size of the block
+    // when iterating the free list
+    size_t block_size_found = 0;
+
+    void* free_list_output = iterate_free_list(free_ptr, requested_size, &block_size_found);
+
+    if(free_list_output == (void*) - 1){
+
+    }
+
+    if(block_size_found == size)
 }
 
 //  malloc - Allocate a block by incrementing the brk pointer.
