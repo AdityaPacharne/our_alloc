@@ -89,8 +89,6 @@ int my_init() {
 
 void* iterate_free_list(void* free_ptr, size_t requested_size){
 
-    size_t size = ALIGN(requested_size);
-
     // Creating a copy of free pointer so as to not lose it
     void* copy_free_ptr = free_ptr;
 
@@ -116,12 +114,34 @@ void* iterate_free_list(void* free_ptr, size_t requested_size){
 
 void* my_malloc(size_t size) {
 
+    size_t aligned_size = ALIGN(size);
+
     // Iterating free list and getting the pointer to the block if sizes matched
-    void* free_list_output = iterate_free_list(free_ptr, requested_size);
+    void* free_list_output = iterate_free_list(free_ptr, aligned_size);
 
     // No ideal block found
     if(free_list_output == (void*) - 1){
 
+        // Calling mem_sbrk for new memory block because we didnt find
+        // one with appropriate size in the free list
+        // The 2 SIZE_T_SIZE are added because we want them even if it is a 
+        // allocated block
+        void* new_block = mem_sbrk(aligned_size + SIZE_T_SIZE + SIZE_T_SIZE);
+
+        // Set the size value at header and "+1" to denote allocated block
+        *((size_t*)new_block) = aligned_size + 1;
+
+        // Getting the pointer to the footer size
+        size_t* footer_new_block = (size_t*)((char*)new_block + SIZE_T_SIZE + aligned_size);
+
+        // Set the size value at footer and "+1" to denote allocated block
+        *footer_new_block = aligned_size + 1;
+
+        // Casting the new block to char* and moving it ahead by SIZE_T
+        // because the allocation should start from the actual space
+        // which starts after size_t
+        // Allocated Memory block looks like: SIZE + ALIGNED SPACE + SIZE
+        return (void*)((char*)new_block + SIZE_T_SIZE);
     }
 
     // Fetching the pointer to the size_t value of the block
