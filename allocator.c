@@ -71,23 +71,23 @@ int my_check() {
 }
 
 // Free ptr variable
-static void** free_ptr;
+static void* free_ptr = NULL;
 
 // init - Initialize the malloc package.  Called once before any other
 // calls are made.  Since this is a very simple implementation, we just
 // return success.
 int my_init() {
-  unsigned int initial_memory = 20000;
-  void* initial_block = mem_sbrk(initial_memory);
-  if(initial_block == (void*) - 1) {
-    return -1;
-  }
-
-  free_ptr = initial_block;
+  /*unsigned int initial_memory = 20000;*/
+  /*void* initial_block = mem_sbrk(initial_memory);*/
+  /*if(initial_block == (void*) - 1) {*/
+  /*  return -1;*/
+  /*}*/
+  /**/
+  /*free_ptr = initial_block;*/
   return 0;
 }
 
-void* iterate_free_list(void* free_ptr, size_t requested_size, size_t* block_size_found){
+void* iterate_free_list(void* free_ptr, size_t requested_size){
 
     size_t size = ALIGN(requested_size);
 
@@ -97,14 +97,13 @@ void* iterate_free_list(void* free_ptr, size_t requested_size, size_t* block_siz
     while(copy_free_ptr != NULL){
         
         // Casting the void pointer to size_t pointer;
-        size_t* size_block = (size_t*)((char*)copy_free_ptr + PTR_SIZE);
+        size_t* size_block = (size_t*)((char*)copy_free_ptr - PTR_SIZE);
+        //Block looks like: SIZE + PTR + SPACE + SIZE
 
         // Getting the actual size from the pointer by derefrecing it
         size_t actual_size = *size_block;
 
-        if( actual_size >= size + SIZE_T_SIZE + SIZE_T_SIZE ){
-            *block_size_found = actual_size;
-            *size_block++;
+        if(actual_size + PTR_SIZE >= size){
             return copy_free_ptr;
         }
         else{
@@ -116,17 +115,33 @@ void* iterate_free_list(void* free_ptr, size_t requested_size, size_t* block_siz
 }
 
 void* my_malloc(size_t size) {
-    // Intializing a variable that will store the size of the block
-    // when iterating the free list
-    size_t block_size_found = 0;
 
-    void* free_list_output = iterate_free_list(free_ptr, requested_size, &block_size_found);
+    // Iterating free list and getting the pointer to the block if sizes matched
+    void* free_list_output = iterate_free_list(free_ptr, requested_size);
 
+    // No ideal block found
     if(free_list_output == (void*) - 1){
 
     }
 
-    if(block_size_found == size)
+    // Fetching the pointer to the size_t value of the block
+    size_t* header_size_ptr = (size_t*)((char*)free_list_output - PTR_SIZE);
+
+    // Actual block size
+    size_t actual_block_size = *header_size_ptr;
+
+    // Fetching the pointer to the footer size
+    size_t* footer_size_ptr = (size_t*)((char*)free_list_output + PTR_SIZE + actual_block_size);
+
+    // Adding PTR_SIZE because the allocated block doesnt need the extra free pointer space
+    // Adding 1 because that signifies that the block is allocated because all the sizes are
+    // supposed to be multiples of 8 thereby being even
+    // So odd size denotes allocated block
+    // Why did i do this? Because i think it will help during the coalescing stage
+    *header_size_ptr += (PTR_SIZE + 1);
+    *footer_size_ptr += (PTR_SIZE + 1);
+
+    return free_list_output;
 }
 
 //  malloc - Allocate a block by incrementing the brk pointer.
