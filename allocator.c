@@ -95,13 +95,13 @@ void* iterate_free_list(void* free_ptr, size_t requested_size){
     while(copy_free_ptr != NULL){
         
         // Casting the void pointer to size_t pointer;
-        size_t* size_block = (size_t*)((char*)copy_free_ptr - PTR_SIZE);
+        size_t* size_block = (size_t*)((char*)copy_free_ptr - SIZE_T_SIZE);
         //Block looks like: SIZE + PTR + SPACE + SIZE
 
         // Getting the actual size from the pointer by derefrecing it
         size_t actual_size = *size_block;
 
-        if(actual_size + PTR_SIZE >= size){
+        if(actual_size + PTR_SIZE >= requested_size){
             return copy_free_ptr;
         }
         else{
@@ -114,6 +114,7 @@ void* iterate_free_list(void* free_ptr, size_t requested_size){
 
 void* my_malloc(size_t size) {
 
+    // Aligning the size to 8
     size_t aligned_size = ALIGN(size);
 
     // Iterating free list and getting the pointer to the block if sizes matched
@@ -150,16 +151,49 @@ void* my_malloc(size_t size) {
     // Actual block size
     size_t actual_block_size = *header_size_ptr;
 
-    // Fetching the pointer to the footer size
-    size_t* footer_size_ptr = (size_t*)((char*)free_list_output + PTR_SIZE + actual_block_size);
+    size + ptr + space + size;
+    space = actual_block_size;
 
-    // Adding PTR_SIZE because the allocated block doesnt need the extra free pointer space
-    // Adding 1 because that signifies that the block is allocated because all the sizes are
-    // supposed to be multiples of 8 thereby being even
-    // So odd size denotes allocated block
-    // Why did i do this? Because i think it will help during the coalescing stage
-    *header_size_ptr += (PTR_SIZE + 1);
-    *footer_size_ptr += (PTR_SIZE + 1);
+    space
+
+    /**/
+    /*// Fetching the pointer to the footer size*/
+    /*size_t* footer_size_ptr = (size_t*)((char*)free_list_output + PTR_SIZE + actual_block_size);*/
+
+    // Here we check if the space left is greater than or equal to 24 
+    // If it is then we can treat the rest of space as a new free block
+    // Thereby reducing internal fragmentation
+    size_t size_difference = actual_size - aligned_size;
+    if(size_difference >= 24){
+
+        // BLOCK looks like size + ptr + space + size
+        // So the total space that can be utilized by a process is space + PTR_SIZE
+        // out of which aligned_size will be used
+        size_t block_space = actual_block_size + PTR_SIZE - aligned_size;
+
+        // split_block pointer points to the start of the new free block
+        void* split_block = (void*)((char*)free_list_output + SIZE_T_SIZE + aligned_size + SIZE_T_SIZE);
+
+        // Subtracting the space of 2 size_t values and 1 free_ptr for the new block
+        size_t real_block_space = block_space - SIZE_T_SIZE - SIZE_T_SIZE - PTR_SIZE;
+
+        size_t* header_split_block = (size_t*)split_block;
+        size_t* footer_split_block = (size_t*)((char*)split_block + SIZE_T_SIZE + PTR_SIZE + real_block_space);
+
+        *header_split_block = real_block_space;
+        *footer_split_block = real_block_space;
+    }
+    else{
+
+        // Adding PTR_SIZE because the allocated block doesnt need the extra free pointer space
+        // Adding 1 because that signifies that the block is allocated because all the sizes are
+        // supposed to be multiples of 8 thereby being even
+        // So odd size denotes allocated block
+        // Why did i do this? Because i think it will help during the coalescing stage
+        *header_size_ptr += (PTR_SIZE + 1);
+        *footer_size_ptr += (PTR_SIZE + 1);
+
+    }
 
     return free_list_output;
 }
