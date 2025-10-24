@@ -27,8 +27,6 @@
 #include "./allocator_interface.h"
 #include "./memlib.h"
 
-#define PTR_SIZE 8
-
 // Don't call libc malloc!
 #define malloc(...) (USE_MY_MALLOC)
 #define free(...) (USE_MY_FREE)
@@ -45,6 +43,11 @@
 
 // The smallest aligned size that will hold a size_t value.
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
+
+#define PTR_SIZE (ALIGN(sizeof(char *)))
+
+// Minimum space that should be present for the block to split
+#define MINIMUM_SPACE (SIZE_T_SIZE + PTR_SIZE + SIZE_T_SIZE)
 
 // check - This checks our invariant that the size_t header before every
 // block points to either the beginning of the next block, or the end of the
@@ -87,13 +90,21 @@ int my_init() {
   return 0;
 }
 
-void* iterate_free_list(void* free_ptr, size_t requested_size){
+void* traverse_free_list(void** free_ptr, size_t requested_size){
 
     // Creating a copy of free pointer so as to not lose it
-    void* copy_free_ptr = free_ptr;
+    void* copy_free_ptr = *free_ptr;
+
+    // prev_block points to previous block inside the free list compared
+    // to the current position
+    void* prev_block = NULL;
 
     while(copy_free_ptr != NULL){
         
+        // Not technically a next block but helps in saving copy_free_ptr
+        // in a different form; so it is easier to dereference it, later on
+        void** next_block = (void**)copy_free_ptr;
+
         // Casting the void pointer to size_t pointer;
         size_t* size_block = (size_t*)((char*)copy_free_ptr - SIZE_T_SIZE);
         //Block looks like: SIZE + PTR + SPACE + SIZE
@@ -102,13 +113,29 @@ void* iterate_free_list(void* free_ptr, size_t requested_size){
         size_t actual_size = *size_block;
 
         if(actual_size + PTR_SIZE >= requested_size){
+
+            // If we find appropriate block at the very first position itself
+            // We just move the free pointer to the next block
+            // So now free list starts from second block instead of first block
+            if(prev_block == NULL){
+                *free_ptr = *next_block;
+            }
+
+            // Skipping the chosen block and making the prev_block point to next block
+            else{
+                *(void**)prev_block = *next_block;
+            }
+
             return copy_free_ptr;
         }
-        else{
-            void** next_block = (void**)copy_free_ptr;
-            copy_free_ptr = *next_block;
-        }
+
+        // prev_block value is changed to current block
+        prev_block = copy_free_ptr;
+
+        // Moving copy_free_ptr to the next block
+        copy_free_ptr = *next_block;
     }
+
     return (void*) - 1;
 }
 
@@ -118,7 +145,7 @@ void* my_malloc(size_t size) {
     size_t aligned_size = ALIGN(size);
 
     // Iterating free list and getting the pointer to the block if sizes matched
-    void* free_list_output = iterate_free_list(free_ptr, aligned_size);
+    void* free_list_output = traverse_free_list(&free_ptr, aligned_size);
 
     // No ideal block found
     if(free_list_output == (void*) - 1){
@@ -146,25 +173,23 @@ void* my_malloc(size_t size) {
     }
 
     // Fetching the pointer to the size_t value of the block
-    size_t* header_size_ptr = (size_t*)((char*)free_list_output - PTR_SIZE);
+    size_t* header_size_ptr = (size_t*)((char*)free_list_output - SIZE_T_SIZE);
 
     // Actual block size
     size_t actual_block_size = *header_size_ptr;
 
-    size + ptr + space + size;
-    space = actual_block_size;
-
-    space
-
-    /**/
-    /*// Fetching the pointer to the footer size*/
-    /*size_t* footer_size_ptr = (size_t*)((char*)free_list_output + PTR_SIZE + actual_block_size);*/
+    // Getting the pointer to footer
+    // Here we are thinking only for the block that is to be allocated
+    // hence only moving ahead by ptr_size + aligned_size
+    // and not caring about the free space if present
+    size_t* footer_size_ptr = (size_t*)((char*)free_list_output + PTR_SIZE + aligned_size);
 
     // Here we check if the space left is greater than or equal to 24 
     // If it is then we can treat the rest of space as a new free block
     // Thereby reducing internal fragmentation
-    size_t size_difference = actual_size - aligned_size;
-    if(size_difference >= 24){
+    size_t size_difference = actual_block_size - aligned_size;
+
+    if(size_difference >= MINIMUM_SPACE){
 
         // BLOCK looks like size + ptr + space + size
         // So the total space that can be utilized by a process is space + PTR_SIZE
@@ -172,7 +197,7 @@ void* my_malloc(size_t size) {
         size_t block_space = actual_block_size + PTR_SIZE - aligned_size;
 
         // split_block pointer points to the start of the new free block
-        void* split_block = (void*)((char*)free_list_output + SIZE_T_SIZE + aligned_size + SIZE_T_SIZE);
+        void* split_block = (void*)((char*)free_list_output + PTR_SIZE + aligned_size + SIZE_T_SIZE);
 
         // Subtracting the space of 2 size_t values and 1 free_ptr for the new block
         size_t real_block_space = block_space - SIZE_T_SIZE - SIZE_T_SIZE - PTR_SIZE;
@@ -180,8 +205,17 @@ void* my_malloc(size_t size) {
         size_t* header_split_block = (size_t*)split_block;
         size_t* footer_split_block = (size_t*)((char*)split_block + SIZE_T_SIZE + PTR_SIZE + real_block_space);
 
-        *header_split_block = real_block_space;
-        *footer_split_block = real_block_space;
+        (*header_split_block) = real_block_space;
+        (*footer_split_block) = real_block_space;
+
+        // Getting the pointer to the split block
+        void** split_block_ptr = (void**)((char*)split_block + SIZE_T_SIZE);
+
+        // Making it so that split block points to the start of free list
+        *split_block_ptr = free_ptr;
+
+        // Split block becomes the first free block in free list
+        free_ptr = split_block_ptr;
     }
     else{
 
@@ -190,8 +224,8 @@ void* my_malloc(size_t size) {
         // supposed to be multiples of 8 thereby being even
         // So odd size denotes allocated block
         // Why did i do this? Because i think it will help during the coalescing stage
-        *header_size_ptr += (PTR_SIZE + 1);
-        *footer_size_ptr += (PTR_SIZE + 1);
+        (*header_size_ptr) += (PTR_SIZE + 1);
+        (*footer_size_ptr) += (PTR_SIZE + 1);
 
     }
 
