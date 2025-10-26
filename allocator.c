@@ -47,7 +47,7 @@
 #define PTR_SIZE (ALIGN(sizeof(char *)))
 
 // Minimum space that should be present for the block to split
-#define MINIMUM_SPACE (SIZE_T_SIZE + PTR_SIZE + SIZE_T_SIZE)
+#define MINIMUM_SPACE (SIZE_T_SIZE + PTR_SIZE + PTR_SIZE + SIZE_T_SIZE)
 
 // check - This checks our invariant that the size_t header before every
 // block points to either the beginning of the next block, or the end of the
@@ -97,6 +97,7 @@ void* traverse_free_list(void** free_ptr, size_t requested_size){
 
     // next_ptr_prev_block points to previous block inside the free list compared
     // to the current position
+    // HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH
     void* next_ptr_prev_block = NULL;
 
     while(current != NULL){
@@ -168,16 +169,18 @@ void* my_malloc(size_t size) {
         // one with appropriate size in the free list
         // The 2 SIZE_T_SIZE are added because we want them even if it is a 
         // allocated block
-        void* new_block = mem_sbrk(aligned_size + SIZE_T_SIZE + SIZE_T_SIZE);
+        // The additional PTR_SIZE is to accomodate the new prev_ptr
+        // for doubly linked list
+        void* new_block = mem_sbrk(aligned_size + SIZE_T_SIZE + SIZE_T_SIZE + PTR_SIZE);
 
         // Set the size value at header and "+1" to denote allocated block
-        *((size_t*)new_block) = aligned_size + 1;
+        *((size_t*)new_block) = aligned_size + PTR_SIZE + 1;
 
         // Getting the pointer to the footer size
-        size_t* footer_new_block = (size_t*)((char*)new_block + SIZE_T_SIZE + aligned_size);
+        size_t* footer_new_block = (size_t*)((char*)new_block + SIZE_T_SIZE + aligned_size + PTR_SIZE);
 
         // Set the size value at footer and "+1" to denote allocated block
-        *footer_new_block = aligned_size + 1;
+        *footer_new_block = aligned_size + PTR_SIZE + 1;
 
         // Casting the new block to char* and moving it ahead by SIZE_T
         // because the allocation should start from the actual space
@@ -194,52 +197,66 @@ void* my_malloc(size_t size) {
 
     // Getting the pointer to footer
     // Here we are thinking only for the block that is to be allocated
-    // hence only moving ahead by ptr_size + aligned_size
+    // hence only moving ahead by ptr_size + ptr_size + aligned_size
     // and not caring about the free space if present
-    size_t* footer_size_ptr = (size_t*)((char*)free_list_output + PTR_SIZE + aligned_size);
+    size_t* footer_size_ptr = (size_t*)((char*)free_list_output + PTR_SIZE + PTR_SIZE + aligned_size);
 
-    // Here we check if the space left is greater than or equal to 24 
+    // Here we check if the space left is greater than or equal to 32
     // If it is then we can treat the rest of space as a new free block
     // Thereby reducing internal fragmentation
     size_t size_difference = actual_block_size - aligned_size;
 
     if(size_difference >= MINIMUM_SPACE){
 
-        // BLOCK looks like size + ptr + space + size
-        // So the total space that can be utilized by a process is space + PTR_SIZE
+        size_t* header_allocated = (size_t*)((char*)free_list_output - SIZE_T_SIZE);
+
+        size_t* footer_allocated = (size_t*)((char*)free_list_output + PTR_SIZE + PTR_SIZE + aligned_size);
+
+        *header_allocated = (aligned_size + PTR_SIZE + 1);
+        *footer_allocated = (aligned_size + PTR_SIZE + 1);
+
+        // BLOCK looks like size + ptr + ptr + space + size
+        // So the total space that can be utilized by a process is space + PTR_SIZE + PTR_SIZE
         // out of which aligned_size will be used
-        size_t block_space = actual_block_size + PTR_SIZE - aligned_size;
+        size_t block_space = actual_block_size + PTR_SIZE + PTR_SIZE - aligned_size;
 
         // split_block pointer points to the start of the new free block
-        void* split_block = (void*)((char*)free_list_output + PTR_SIZE + aligned_size + SIZE_T_SIZE);
+        void* split_block = (void*)((char*)free_list_output + PTR_SIZE + PTR_SIZE + aligned_size + SIZE_T_SIZE);
 
         // Subtracting the space of 2 size_t values and 1 free_ptr for the new block
-        size_t real_block_space = block_space - SIZE_T_SIZE - SIZE_T_SIZE - PTR_SIZE;
+        size_t real_block_space = block_space - SIZE_T_SIZE - SIZE_T_SIZE - PTR_SIZE - PTR_SIZE;
 
         size_t* header_split_block = (size_t*)split_block;
-        size_t* footer_split_block = (size_t*)((char*)split_block + SIZE_T_SIZE + PTR_SIZE + real_block_space);
+        size_t* footer_split_block = (size_t*)((char*)split_block + SIZE_T_SIZE + PTR_SIZE + PTR_SIZE + real_block_space);
 
         (*header_split_block) = real_block_space;
         (*footer_split_block) = real_block_space;
 
+        void** first_block_prev_ptr = (void**)((char*)free_ptr + PTR_SIZE);
+
+        void** split_block_prev_ptr = (void**)((char*)split_block + PTR_SIZE + PTR_SIZE);
+        
+        *first_block_prev_ptr = *split_block_prev_ptr;
+
         // Getting the pointer to the split block
-        void** split_block_ptr = (void**)((char*)split_block + SIZE_T_SIZE);
+        void** split_block_next_ptr = (void**)((char*)split_block + SIZE_T_SIZE);
 
         // Making it so that split block points to the start of free list
-        *split_block_ptr = free_ptr;
+        *split_block_next_ptr = free_ptr;
 
         // Split block becomes the first free block in free list
         free_ptr = split_block_ptr;
     }
     else{
 
-        // Adding PTR_SIZE because the allocated block doesnt need the extra free pointer space
+        // Adding PTR_SIZE + PTR_SIZE because the allocated block doesnt need the
+        // extra next_ptr and prev_ptr space
         // Adding 1 because that signifies that the block is allocated because all the sizes are
         // supposed to be multiples of 8 thereby being even
         // So odd size denotes allocated block
         // Why did i do this? Because i think it will help during the coalescing stage
-        (*header_size_ptr) += (PTR_SIZE + 1);
-        (*footer_size_ptr) += (PTR_SIZE + 1);
+        (*header_size_ptr) += (PTR_SIZE + PTR_SIZE + 1);
+        (*footer_size_ptr) += (PTR_SIZE + PTR_SIZE + 1);
 
     }
 
