@@ -93,47 +93,61 @@ int my_init() {
 void* traverse_free_list(void** free_ptr, size_t requested_size){
 
     // Creating a copy of free pointer so as to not lose it
-    void* copy_free_ptr = *free_ptr;
+    void* current = *free_ptr;
 
-    // prev_block points to previous block inside the free list compared
+    // next_ptr_prev_block points to previous block inside the free list compared
     // to the current position
-    void* prev_block = NULL;
+    void* next_ptr_prev_block = NULL;
 
-    while(copy_free_ptr != NULL){
+    while(current != NULL){
         
-        // Not technically a next block but helps in saving copy_free_ptr
+        // Not technically a next block but helps in saving current
         // in a different form; so it is easier to dereference it, later on
-        void** next_block = (void**)copy_free_ptr;
+        void** next_ptr_current_block = (void**)current;
 
         // Casting the void pointer to size_t pointer;
-        size_t* size_block = (size_t*)((char*)copy_free_ptr - SIZE_T_SIZE);
+        size_t* size_block = (size_t*)((char*)current - SIZE_T_SIZE);
         //Block looks like: SIZE + PTR + SPACE + SIZE
 
         // Getting the actual size from the pointer by derefrecing it
         size_t actual_size = *size_block;
 
-        if(actual_size + PTR_SIZE >= requested_size){
+        if(actual_size + PTR_SIZE + PTR_SIZE >= requested_size){
+
+            // Getting the prev_ptr of the next block
+            void** prev_ptr_next_block = (void**)((char*)(*next_ptr_current_block) + PTR_SIZE);
 
             // If we find appropriate block at the very first position itself
             // We just move the free pointer to the next block
             // So now free list starts from second block instead of first block
-            if(prev_block == NULL){
-                *free_ptr = *next_block;
+            if(next_ptr_prev_block == NULL){
+                *free_ptr = *next_ptr_current_block;
+
+                // Making the prev_ptr to point to NULL
+                *prev_ptr_next_block = NULL;
             }
 
-            // Skipping the chosen block and making the prev_block point to next block
+            // Skipping the chosen block and making the next_ptr_prev_block point to next block
             else{
-                *(void**)prev_block = *next_block;
+                *(void**)next_ptr_prev_block = *next_ptr_current_block;
+
+                // If appropriate block is middle one
+                if(*next_ptr_current_block != NULL){
+
+                    void** prev_ptr_current_block = (void**)((char*)current + PTR_SIZE);
+
+                    *prev_ptr_next_block = *prev_ptr_current_block;
+                }
             }
 
-            return copy_free_ptr;
+            return current;
         }
 
-        // prev_block value is changed to current block
-        prev_block = copy_free_ptr;
+        // next_ptr_prev_block value is changed to current block
+        next_ptr_prev_block = current;
 
-        // Moving copy_free_ptr to the next block
-        copy_free_ptr = *next_block;
+        // Moving current to the next block
+        current = *next_ptr_current_block;
     }
 
     return (void*) - 1;
