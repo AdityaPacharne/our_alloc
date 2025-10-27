@@ -76,6 +76,10 @@ int my_check() {
 // Free ptr variable
 static void* free_ptr = NULL;
 
+void test_my_malloc();
+void change_prev_next_values(void* block, void* change_next, void* change_prev);
+void* construct_free_block(size_t size);
+
 // init - Initialize the malloc package.  Called once before any other
 // calls are made.  Since this is a very simple implementation, we just
 // return success.
@@ -87,7 +91,61 @@ int my_init() {
   /*}*/
   /**/
   /*free_ptr = initial_block;*/
+
+#ifdef DEBUG_CODE
+  test_my_malloc();
+#endif
+
   return 0;
+}
+
+void*
+construct_free_block(size_t size) {
+
+    size_t aligned_size = ALIGN(size);
+
+    size_t total_space = SIZE_T_SIZE + PTR_SIZE + PTR_SIZE + aligned_size + SIZE_T_SIZE;
+
+    void* block = mem_sbrk(total_space);
+    if(block == (void*) - 1){
+        return (void*) - 1;
+    }
+
+    size_t* block_header = (size_t*)block;
+    size_t* block_footer = (size_t*)((char*)block + SIZE_T_SIZE + PTR_SIZE + PTR_SIZE + aligned_size);
+
+    *block_header = aligned_size;
+    *block_footer = aligned_size;
+
+    return block;
+}
+
+void
+change_prev_next_values(void* block, void* change_next, void* change_prev){
+
+    void** next_ptr = (void**)((char*)block + SIZE_T_SIZE);
+    void** prev_ptr = (void**)((char*)block + SIZE_T_SIZE + PTR_SIZE);
+
+    *next_ptr = change_next;
+    *prev_ptr = change_prev;
+}
+
+void
+test_my_malloc() {
+    void* block1 = construct_free_block(1000);
+    void* block2 = construct_free_block(1000);
+    void* block3 = construct_free_block(1000);
+
+    change_prev_next_values(block1, block2, NULL);
+    change_prev_next_values(block2, block3, block1);
+    change_prev_next_values(block3, NULL, block2);
+
+    *(void**)free_ptr = (void*)((char*)block1 + SIZE_T_SIZE);
+
+    void* first_test = my_malloc(128);
+    if(first_test == (void*) - 1){
+        printf("First Test Failed\n");
+    }
 }
 
 void* traverse_free_list(void** free_ptr, size_t requested_size){
@@ -245,7 +303,7 @@ void* my_malloc(size_t size) {
         *split_block_next_ptr = free_ptr;
 
         // Split block becomes the first free block in free list
-        free_ptr = split_block_ptr;
+        free_ptr = split_block_next_ptr;
     }
     else{
 
