@@ -140,7 +140,7 @@ test_my_malloc() {
     change_prev_next_values(block2, block3, block1);
     change_prev_next_values(block3, NULL, block2);
 
-    *(void**)free_ptr = (void*)((char*)block1 + SIZE_T_SIZE);
+    free_ptr = (void*)((char*)block1 + SIZE_T_SIZE);
 
     void* first_test = my_malloc(128);
     if(first_test == (void*) - 1){
