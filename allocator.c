@@ -31,6 +31,7 @@
 #define malloc(...) (USE_MY_MALLOC)
 #define free(...) (USE_MY_FREE)
 #define realloc(...) (USE_MY_REALLOC)
+#define DEBUG_CODE
 
 // All blocks must have a specified minimum alignment.
 // The alignment requirement (from config.h) is >= 8 bytes.
@@ -126,15 +127,34 @@ change_prev_next_values(void* block, void* change_next, void* change_prev){
     void** next_ptr = (void**)((char*)block + SIZE_T_SIZE);
     void** prev_ptr = (void**)((char*)block + SIZE_T_SIZE + PTR_SIZE);
 
-    *next_ptr = change_next;
-    *prev_ptr = change_prev;
+    void* final_next = change_next ? (void*)((char*)change_next + SIZE_T_SIZE) : NULL;
+    void* final_prev = change_prev ? (void*)((char*)change_prev + SIZE_T_SIZE) : NULL;
+
+    *next_ptr = final_next;
+    *prev_ptr = final_prev;
+}
+
+void
+traversing(void* free_ptr){
+
+    void* current = free_ptr;
+
+    while(current != NULL){
+        size_t* header_size = (size_t*)((char*)current - SIZE_T_SIZE);
+        size_t size = *header_size;
+        size_t* footer_size = (size_t*)((char*)current + PTR_SIZE + PTR_SIZE + size);
+
+        printf("Block: %zu\n", size);
+
+        current = *(void**)current;
+    }
 }
 
 void
 test_my_malloc() {
-    void* block1 = construct_free_block(1000);
-    void* block2 = construct_free_block(1000);
-    void* block3 = construct_free_block(1000);
+    void* block1 = construct_free_block(1024);
+    void* block2 = construct_free_block(2048);
+    void* block3 = construct_free_block(4096);
 
     change_prev_next_values(block1, block2, NULL);
     change_prev_next_values(block2, block3, block1);
@@ -142,10 +162,9 @@ test_my_malloc() {
 
     free_ptr = (void*)((char*)block1 + SIZE_T_SIZE);
 
-    void* first_test = my_malloc(128);
-    if(first_test == (void*) - 1){
-        printf("First Test Failed\n");
-    }
+    traversing(free_ptr);
+
+    printf("Testing Complete :)\n");
 }
 
 void* traverse_free_list(void** free_ptr, size_t requested_size){
@@ -319,38 +338,6 @@ void* my_malloc(size_t size) {
     }
 
     return free_list_output;
-}
-
-//  malloc - Allocate a block by incrementing the brk pointer.
-//  Always allocate a block whose size is a multiple of the alignment.
-void* my_malloc(size_t size) {
-  // We allocate a little bit of extra memory so that we can store the
-  // size of the block we've allocated.  Take a look at realloc to see
-  // one example of a place where this can come in handy.
-  int aligned_size = ALIGN(size + SIZE_T_SIZE);
-
-  // Expands the heap by the given number of bytes and returns a pointer to
-  // the newly-allocated area.  This is a slow call, so you will want to
-  // make sure you don't wind up calling it on every malloc.
-  void* p = mem_sbrk(aligned_size);
-
-  if (p == (void*) - 1) {
-    // Whoops, an error of some sort occurred.  We return NULL to let
-    // the client code know that we weren't able to allocate memory.
-    return NULL;
-  } else {
-    // We store the size of the block we've allocated in the first
-    // SIZE_T_SIZE bytes.
-    *(size_t*)p = size;
-
-    // Then, we return a pointer to the rest of the block of memory,
-    // which is at least size bytes long.  We have to cast to uint8_t
-    // before we try any pointer arithmetic because voids have no size
-    // and so the compiler doesn't know how far to move the pointer.
-    // Since a uint8_t is always one byte, adding SIZE_T_SIZE after
-    // casting advances the pointer by SIZE_T_SIZE bytes.
-    return (void*)((char*)p + SIZE_T_SIZE);
-  }
 }
 
 // free - Freeing a block does nothing.
