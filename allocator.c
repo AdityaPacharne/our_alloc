@@ -340,8 +340,76 @@ void* my_malloc(size_t size) {
     return free_list_output;
 }
 
+bool
+left_free_block(void* ptr){
+    size_t left_block_size = *(size_t*)((char*)ptr - SIZE_T_SIZE - SIZE_T_SIZE);
+    if( !(left_block_size & 1) ) return true;
+    return false;
+}
+
+bool
+right_free_block(void* ptr){
+    size_t current_block_size = *(size_t*)((char*)ptr - SIZE_T_SIZE);
+    size_t right_block_size = *(size_t*)((char*)ptr + current_block_size + SIZE_T_SIZE);
+    if( !(right_block_size & 1) ) return true;
+    return false;
+}
+
+void
+skip_block(void* ptr, void** free_ptr){
+    void** next_ptr = (void**)ptr;
+    void** prev_ptr = (void**)((char*)ptr + PTR_SIZE);
+
+    void* next_block = *next_ptr;
+
+    if(*prev_ptr == NULL){
+        *free_ptr = next_block;
+    }
+    else if(*prev_ptr != NULL){
+        void* prev_ptr_prev_block = *prev_ptr;
+        void** next_ptr_prev_block = (void**)((char*)prev_ptr_prev_block - PTR_SIZE);
+        *next_ptr_prev_block = next_block;
+    }
+
+    if(next_block != NULL){
+        void** prev_ptr_next_block = (void**)((char*)next_block + PTR_SIZE);
+        *prev_ptr_next_block = NULL;
+    }
+}
+
+void
+coalescing_rl(void** free_ptr, void* ptr){
+
+    size_t block_size = *(size_t*)((char*)ptr - SIZE_T_SIZE);
+    size_t left_size = *(size_t*)((char*)ptr - SIZE_T_SIZE - SIZE_T_SIZE);
+    size_t right_size = *(size_t*)((char*)ptr + block_size + SIZE_T_SIZE);
+
+    size_t total_new_size = block_size + left_size + right_size + (4 * SIZE_T_SIZE) + (2 * PTR_SIZE);
+
+    void* left_block = (void*)((char*)ptr - (2 * SIZE_T_SIZE) - left_size - (2 * PTR_SIZE));
+    void* right_block = (void*)((char*)ptr + block_size + (2 * SIZE_T_SIZE));
+
+    skip_block(left_block, &free_ptr);
+    skip_block(right_block, &free_ptr);
+
+    size_t* header = (size_t*)((char*)left_block - SIZE_T_SIZE);
+    size_t* footer = (size_t*)((char*)right_block + (2 * PTR_SIZE) + right_size);
+
+    *header = total_new_size;
+    *footer = total_new_size;
+}
+
 // free - Freeing a block does nothing.
 void my_free(void* ptr) {
+
+    size_t current_block_size = *(size_t*)((char*)ptr - SIZE_T_SIZE);
+
+    bool left_free = left_free_block(ptr);
+    bool right_free = right_free_block(ptr);
+
+    if(left_free && right_free){
+        coalescing_rl(&free_ptr, ptr);
+    }
 }
 
 // realloc - Implemented simply in terms of malloc and free
