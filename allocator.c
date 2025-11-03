@@ -24,6 +24,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 #include "./allocator_interface.h"
 #include "./memlib.h"
 
@@ -142,7 +143,7 @@ traversing(void* free_ptr){
     while(current != NULL){
         size_t* header_size = (size_t*)((char*)current - SIZE_T_SIZE);
         size_t size = *header_size;
-        size_t* footer_size = (size_t*)((char*)current + PTR_SIZE + PTR_SIZE + size);
+        /*size_t* footer_size = (size_t*)((char*)current + PTR_SIZE + PTR_SIZE + size);*/
 
         printf("Block: %zu\n", size);
 
@@ -377,10 +378,10 @@ skip_block(void* ptr, void** free_ptr){
     }
 }
 
-void
+void*
 coalescing_rl(void** free_ptr, void* ptr){
 
-    size_t block_size = *(size_t*)((char*)ptr - SIZE_T_SIZE);
+    size_t block_size = *(size_t*)((char*)ptr - SIZE_T_SIZE) - 1;
     size_t left_size = *(size_t*)((char*)ptr - SIZE_T_SIZE - SIZE_T_SIZE);
     size_t right_size = *(size_t*)((char*)ptr + block_size + SIZE_T_SIZE);
 
@@ -389,27 +390,100 @@ coalescing_rl(void** free_ptr, void* ptr){
     void* left_block = (void*)((char*)ptr - (2 * SIZE_T_SIZE) - left_size - (2 * PTR_SIZE));
     void* right_block = (void*)((char*)ptr + block_size + (2 * SIZE_T_SIZE));
 
-    skip_block(left_block, &free_ptr);
-    skip_block(right_block, &free_ptr);
+    skip_block(left_block, free_ptr);
+    skip_block(right_block, free_ptr);
 
     size_t* header = (size_t*)((char*)left_block - SIZE_T_SIZE);
     size_t* footer = (size_t*)((char*)right_block + (2 * PTR_SIZE) + right_size);
 
     *header = total_new_size;
     *footer = total_new_size;
+
+    void* new_ptr = left_block;
+
+    return new_ptr;
+}
+
+void*
+coalescing_l(void** free_ptr, void* ptr){
+
+    size_t block_size = *(size_t*)((char*)ptr - SIZE_T_SIZE) - 1;
+    size_t left_size = *(size_t*)((char*)ptr - SIZE_T_SIZE - SIZE_T_SIZE);
+
+    size_t total_new_size = block_size + left_size + (2 * SIZE_T_SIZE);
+
+    void* left_block = (void*)((char*)ptr - (2 * SIZE_T_SIZE) - left_size - (2 * PTR_SIZE));
+
+    skip_block(left_block, free_ptr);
+
+    size_t* header = (size_t*)((char*)left_block - SIZE_T_SIZE);
+    size_t* footer = (size_t*)((char*)ptr + block_size);
+
+    *header = total_new_size;
+    *footer = total_new_size;
+
+    void* new_ptr = left_block;
+
+    return new_ptr;
+}
+
+void*
+coalescing_r(void** free_ptr, void* ptr){
+
+    size_t block_size = *(size_t*)((char*)ptr - SIZE_T_SIZE) - 1;
+    size_t right_size = *(size_t*)((char*)ptr + block_size + SIZE_T_SIZE);
+
+    size_t total_new_size = block_size + right_size + (2 * SIZE_T_SIZE);
+
+    void* right_block = (void*)((char*)ptr + block_size + (2 * SIZE_T_SIZE));
+
+    skip_block(right_block, free_ptr);
+
+    size_t* header = (size_t*)((char*)ptr - SIZE_T_SIZE);
+    size_t* footer = (size_t*)((char*)right_block + (2 * PTR_SIZE) + right_size);
+
+    *header = total_new_size;
+    *footer = total_new_size;
+
+    void* new_ptr = ptr;
+
+    return new_ptr;
 }
 
 // free - Freeing a block does nothing.
 void my_free(void* ptr) {
 
-    size_t current_block_size = *(size_t*)((char*)ptr - SIZE_T_SIZE);
+    size_t current_block_size = *(size_t*)((char*)ptr - SIZE_T_SIZE) - 1;
 
     bool left_free = left_free_block(ptr);
     bool right_free = right_free_block(ptr);
 
+    void* new_block = ptr;
+
     if(left_free && right_free){
-        coalescing_rl(&free_ptr, ptr);
+        new_block = coalescing_rl(&free_ptr, ptr);
     }
+    else if(left_free){
+        new_block = coalescing_l(&free_ptr, ptr);
+    }
+    else if(right_free){
+        new_block = coalescing_r(&free_ptr, ptr);
+    }
+
+    void** next_ptr_current_block = (void**)new_block;
+    void** prev_ptr_current_block = (void**)((char*)new_block + PTR_SIZE);
+
+    *next_ptr_current_block = free_ptr;
+    free_ptr = next_ptr_current_block;
+
+    *prev_ptr_current_block = NULL;
+
+    void* next_block = (void*)(*next_ptr_current_block);
+    if( next_block != NULL ){
+        void** prev_ptr_next_block = (void**)((char*)next_block + PTR_SIZE);
+        *prev_ptr_next_block = next_ptr_current_block;
+    }
+
 }
 
 // realloc - Implemented simply in terms of malloc and free
