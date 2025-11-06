@@ -25,6 +25,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+#include <unistd.h>
 #include "./allocator_interface.h"
 #include "./memlib.h"
 
@@ -32,7 +33,7 @@
 #define malloc(...) (USE_MY_MALLOC)
 #define free(...) (USE_MY_FREE)
 #define realloc(...) (USE_MY_REALLOC)
-#define DEBUG_CODE
+/*#define DEBUG_CODE*/
 
 // All blocks must have a specified minimum alignment.
 // The alignment requirement (from config.h) is >= 8 bytes.
@@ -45,11 +46,6 @@
 
 // The smallest aligned size that will hold a size_t value.
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
-
-#define PTR_SIZE (ALIGN(sizeof(char *)))
-
-// Minimum space that should be present for the block to split
-#define MINIMUM_SPACE (SIZE_T_SIZE + PTR_SIZE + PTR_SIZE + SIZE_T_SIZE)
 
 // check - This checks our invariant that the size_t header before every
 // block points to either the beginning of the next block, or the end of the
@@ -75,390 +71,317 @@ int my_check() {
   return 0;
 }
 
+typedef struct header_block {
+    size_t size;
+    struct header_block* next;
+    struct header_block* prev;
+} header_block;
+
+typedef struct footer_block {
+    size_t size;
+} footer_block;
+
+#define HEADER sizeof(header_block)
+#define FOOTER sizeof(footer_block)
+
 // Free ptr variable
-static void* free_ptr = NULL;
+static header_block* free_ptr = NULL;
+
+static void* heap_start_boundary = NULL;
+static void* heap_start = NULL;
 
 void test_my_malloc();
-void change_prev_next_values(void* block, void* change_next, void* change_prev);
-void* construct_free_block(size_t size);
+void change_prev_next_values(header_block* block, header_block* change_next, header_block* change_prev);
+header_block* construct_free_block(size_t size);
 
 // init - Initialize the malloc package.  Called once before any other
 // calls are made.  Since this is a very simple implementation, we just
 // return success.
 int my_init() {
-  /*unsigned int initial_memory = 20000;*/
-  /*void* initial_block = mem_sbrk(initial_memory);*/
-  /*if(initial_block == (void*) - 1) {*/
-  /*  return -1;*/
-  /*}*/
-  /**/
-  /*free_ptr = initial_block;*/
+
+    footer_block* boundary = mem_sbrk(FOOTER);
+    boundary->size = 1;
+
+    heap_start_boundary = (void*)boundary;
+    heap_start = (void*)((char*)boundary + FOOTER);
 
 #ifdef DEBUG_CODE
-  test_my_malloc();
+    test_my_malloc();
 #endif
 
-  return 0;
+    return 0;
 }
 
-void*
+header_block*
 construct_free_block(size_t size) {
-
+    
     size_t aligned_size = ALIGN(size);
-
-    size_t total_space = SIZE_T_SIZE + PTR_SIZE + PTR_SIZE + aligned_size + SIZE_T_SIZE;
+    size_t total_space = aligned_size + HEADER + FOOTER;
 
     void* block = mem_sbrk(total_space);
     if(block == (void*) - 1){
         return (void*) - 1;
     }
 
-    size_t* block_header = (size_t*)block;
-    size_t* block_footer = (size_t*)((char*)block + SIZE_T_SIZE + PTR_SIZE + PTR_SIZE + aligned_size);
+    header_block* header = (header_block*)block;
+    footer_block* footer = (footer_block*)((char*)block + HEADER + aligned_size);
 
-    *block_header = aligned_size;
-    *block_footer = aligned_size;
+    header->size = aligned_size;
+    footer->size = aligned_size;
 
-    return block;
+    return header;
 }
 
 void
-change_prev_next_values(void* block, void* change_next, void* change_prev){
-
-    void** next_ptr = (void**)((char*)block + SIZE_T_SIZE);
-    void** prev_ptr = (void**)((char*)block + SIZE_T_SIZE + PTR_SIZE);
-
-    void* final_next = change_next ? (void*)((char*)change_next + SIZE_T_SIZE) : NULL;
-    void* final_prev = change_prev ? (void*)((char*)change_prev + SIZE_T_SIZE) : NULL;
-
-    *next_ptr = final_next;
-    *prev_ptr = final_prev;
+change_prev_next_values(header_block* block, header_block* change_next, header_block* change_prev){
+    block->next = change_next;
+    block->prev = change_prev;
 }
 
 void
-traversing(void* free_ptr){
+traversing(header_block* free_ptr){
 
-    void* current = free_ptr;
-
+    header_block* current = free_ptr;
     while(current != NULL){
-        size_t* header_size = (size_t*)((char*)current - SIZE_T_SIZE);
-        size_t size = *header_size;
-        /*size_t* footer_size = (size_t*)((char*)current + PTR_SIZE + PTR_SIZE + size);*/
-
-        printf("Block: %zu\n", size);
-
-        current = *(void**)current;
+        printf("%zu -> ", current->size);
+        current = current->next;
     }
+    printf("\n");
 }
 
 void
 test_my_malloc() {
-    void* block1 = construct_free_block(1024);
-    void* block2 = construct_free_block(2048);
-    void* block3 = construct_free_block(4096);
+    printf("\n\n");
+    header_block* block1 = construct_free_block(1024);
+    header_block* block2 = construct_free_block(2048);
+    header_block* block3 = construct_free_block(4096);
 
     change_prev_next_values(block1, block2, NULL);
     change_prev_next_values(block2, block3, block1);
     change_prev_next_values(block3, NULL, block2);
 
-    free_ptr = (void*)((char*)block1 + SIZE_T_SIZE);
+    traversing(block1);
 
-    traversing(free_ptr);
-
-    printf("Testing Complete :)\n");
+    printf("Testing Complete :)\n\n\n");
 }
 
-void* traverse_free_list(void** free_ptr, size_t requested_size){
+void*
+traverse_free_list(header_block** free_ptr, size_t requested_size){
 
-    // Creating a copy of free pointer so as to not lose it
-    void* current = *free_ptr;
-
-    // next_ptr_prev_block points to previous block inside the free list compared
-    // to the current position
-    // HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH
-    void* next_ptr_prev_block = NULL;
+    header_block* current = *free_ptr;
 
     while(current != NULL){
-        
-        // Not technically a next block but helps in saving current
-        // in a different form; so it is easier to dereference it, later on
-        void** next_ptr_current_block = (void**)current;
 
-        // Casting the void pointer to size_t pointer;
-        size_t* size_block = (size_t*)((char*)current - SIZE_T_SIZE);
-        //Block looks like: SIZE + PTR + SPACE + SIZE
+        sleep(2);
 
-        // Getting the actual size from the pointer by derefrecing it
-        size_t actual_size = *size_block;
-
-        if(actual_size + PTR_SIZE + PTR_SIZE >= requested_size){
-
-            // Getting the prev_ptr of the next block
-            void** prev_ptr_next_block = (void**)((char*)(*next_ptr_current_block) + PTR_SIZE);
-
-            // If we find appropriate block at the very first position itself
-            // We just move the free pointer to the next block
-            // So now free list starts from second block instead of first block
-            if(next_ptr_prev_block == NULL){
-                *free_ptr = *next_ptr_current_block;
-
-                // Making the prev_ptr to point to NULL
-                *prev_ptr_next_block = NULL;
-            }
-
-            // Skipping the chosen block and making the next_ptr_prev_block point to next block
-            else{
-                *(void**)next_ptr_prev_block = *next_ptr_current_block;
-
-                // If appropriate block is middle one
-                if(*next_ptr_current_block != NULL){
-
-                    void** prev_ptr_current_block = (void**)((char*)current + PTR_SIZE);
-
-                    *prev_ptr_next_block = *prev_ptr_current_block;
+        if(current->size >= requested_size){
+            if(current->prev == NULL){
+                (*free_ptr) = current->next;
+                if(current->next != NULL){
+                    current->next->prev = NULL;
                 }
             }
-
+            else{
+                current->prev->next = current->next;
+                if(current->next != NULL){
+                    current->next->prev = current->prev;
+                }
+            }
+            current->next = NULL;
+            current->prev = NULL;
             return current;
         }
-
-        // next_ptr_prev_block value is changed to current block
-        next_ptr_prev_block = current;
-
-        // Moving current to the next block
-        current = *next_ptr_current_block;
+        current = current->next;
     }
-
-    return (void*) - 1;
+    return NULL;
 }
 
-void* my_malloc(size_t size) {
+void*
+my_malloc(size_t size){
 
-    // Aligning the size to 8
     size_t aligned_size = ALIGN(size);
 
-    // Iterating free list and getting the pointer to the block if sizes matched
-    void* free_list_output = traverse_free_list(&free_ptr, aligned_size);
+    header_block* free_block = traverse_free_list(&free_ptr, aligned_size);
 
-    // No ideal block found
-    if(free_list_output == (void*) - 1){
+    if(free_block == NULL){
 
-        // Calling mem_sbrk for new memory block because we didnt find
-        // one with appropriate size in the free list
-        // The 2 SIZE_T_SIZE are added because we want them even if it is a 
-        // allocated block
-        // The additional PTR_SIZE is to accomodate the new prev_ptr
-        // for doubly linked list
-        void* new_block = mem_sbrk(aligned_size + SIZE_T_SIZE + SIZE_T_SIZE + PTR_SIZE);
+        void* new_block = mem_sbrk(HEADER + aligned_size + FOOTER);
 
-        // Set the size value at header and "+1" to denote allocated block
-        *((size_t*)new_block) = aligned_size + PTR_SIZE + 1;
+        header_block* new_header = (header_block*)new_block;
+        footer_block* new_footer = (footer_block*)((char*)new_block + HEADER + aligned_size);
 
-        // Getting the pointer to the footer size
-        size_t* footer_new_block = (size_t*)((char*)new_block + SIZE_T_SIZE + aligned_size + PTR_SIZE);
+        new_header->size = (aligned_size + 1);
+        new_footer->size = (aligned_size + 1);
 
-        // Set the size value at footer and "+1" to denote allocated block
-        *footer_new_block = aligned_size + PTR_SIZE + 1;
+        void* space = (void*)((char*)new_block + HEADER);
 
-        // Casting the new block to char* and moving it ahead by SIZE_T
-        // because the allocation should start from the actual space
-        // which starts after size_t
-        // Allocated Memory block looks like: SIZE + ALIGNED SPACE + SIZE
-        return (void*)((char*)new_block + SIZE_T_SIZE);
+        return space;
     }
 
-    // Fetching the pointer to the size_t value of the block
-    size_t* header_size_ptr = (size_t*)((char*)free_list_output - SIZE_T_SIZE);
+    size_t block_size = free_block->size;
 
-    // Actual block size
-    size_t actual_block_size = *header_size_ptr;
+    if(block_size - aligned_size >= HEADER + FOOTER){
 
-    // Getting the pointer to footer
-    // Here we are thinking only for the block that is to be allocated
-    // hence only moving ahead by ptr_size + ptr_size + aligned_size
-    // and not caring about the free space if present
-    size_t* footer_size_ptr = (size_t*)((char*)free_list_output + PTR_SIZE + PTR_SIZE + aligned_size);
+        size_t total_split = block_size - aligned_size;
+        size_t useful_space = total_split - HEADER - FOOTER;
 
-    // Here we check if the space left is greater than or equal to 32
-    // If it is then we can treat the rest of space as a new free block
-    // Thereby reducing internal fragmentation
-    size_t size_difference = actual_block_size - aligned_size;
+        header_block* allocated_header = (header_block*)free_block;
+        footer_block* allocated_footer = (footer_block*)((char*)free_block + HEADER + aligned_size);
 
-    if(size_difference >= MINIMUM_SPACE){
+        allocated_header->size = aligned_size + 1;
+        allocated_header->next = NULL;
+        allocated_header->prev = NULL;
 
-        size_t* header_allocated = (size_t*)((char*)free_list_output - SIZE_T_SIZE);
+        allocated_footer->size = aligned_size + 1;
 
-        size_t* footer_allocated = (size_t*)((char*)free_list_output + PTR_SIZE + PTR_SIZE + aligned_size);
+        header_block* split_header = (header_block*)((char*)allocated_footer + FOOTER);
+        footer_block* split_footer = (footer_block*)((char*)split_header + HEADER + useful_space);
 
-        *header_allocated = (aligned_size + PTR_SIZE + 1);
-        *footer_allocated = (aligned_size + PTR_SIZE + 1);
+        split_header->size = useful_space;
+        split_footer->size = useful_space;
 
-        // BLOCK looks like size + ptr + ptr + space + size
-        // So the total space that can be utilized by a process is space + PTR_SIZE + PTR_SIZE
-        // out of which aligned_size will be used
-        size_t block_space = actual_block_size + PTR_SIZE + PTR_SIZE - aligned_size;
+        split_header->next = free_ptr;
+        split_header->prev = NULL;
 
-        // split_block pointer points to the start of the new free block
-        void* split_block = (void*)((char*)free_list_output + PTR_SIZE + PTR_SIZE + aligned_size + SIZE_T_SIZE);
+        if(free_ptr != NULL){
+            free_ptr->prev = split_header;
+        }
 
-        // Subtracting the space of 2 size_t values and 1 free_ptr for the new block
-        size_t real_block_space = block_space - SIZE_T_SIZE - SIZE_T_SIZE - PTR_SIZE - PTR_SIZE;
+        free_ptr = split_header;
 
-        size_t* header_split_block = (size_t*)split_block;
-        size_t* footer_split_block = (size_t*)((char*)split_block + SIZE_T_SIZE + PTR_SIZE + PTR_SIZE + real_block_space);
+        void* allocated_space = (void*)((char*)allocated_header + HEADER);
 
-        (*header_split_block) = real_block_space;
-        (*footer_split_block) = real_block_space;
-
-        void** first_block_prev_ptr = (void**)((char*)free_ptr + PTR_SIZE);
-
-        void** split_block_prev_ptr = (void**)((char*)split_block + PTR_SIZE + PTR_SIZE);
-        
-        *first_block_prev_ptr = *split_block_prev_ptr;
-
-        // Getting the pointer to the split block
-        void** split_block_next_ptr = (void**)((char*)split_block + SIZE_T_SIZE);
-
-        // Making it so that split block points to the start of free list
-        *split_block_next_ptr = free_ptr;
-
-        // Split block becomes the first free block in free list
-        free_ptr = split_block_next_ptr;
+        return allocated_space;
     }
     else{
+        header_block* header = free_block;
+        footer_block* footer = (footer_block*)((char*)header + HEADER + header->size);
 
-        // Adding PTR_SIZE + PTR_SIZE because the allocated block doesnt need the
-        // extra next_ptr and prev_ptr space
-        // Adding 1 because that signifies that the block is allocated because all the sizes are
-        // supposed to be multiples of 8 thereby being even
-        // So odd size denotes allocated block
-        // Why did i do this? Because i think it will help during the coalescing stage
-        (*header_size_ptr) += (PTR_SIZE + PTR_SIZE + 1);
-        (*footer_size_ptr) += (PTR_SIZE + PTR_SIZE + 1);
+        (header->size)++;
+        (footer->size)++;
 
+        void* space = (void*)((char*)free_block + HEADER);
+
+        return space;
     }
-
-    return free_list_output;
 }
 
 bool
-left_free_block(void* ptr){
-    size_t left_block_size = *(size_t*)((char*)ptr - SIZE_T_SIZE - SIZE_T_SIZE);
-    if( !(left_block_size & 1) ) return true;
+left_free_block(void* ptr) {
+
+    footer_block* left_block = (footer_block*)((char*)ptr - HEADER - FOOTER);
+    if ((void*)left_block < heap_start) return false;
+
+    size_t left_block_size = left_block->size;
+
+    if(left_block_size && (left_block_size % 2) == 0) return true;
     return false;
 }
 
 bool
-right_free_block(void* ptr){
-    size_t current_block_size = *(size_t*)((char*)ptr - SIZE_T_SIZE);
-    size_t right_block_size = *(size_t*)((char*)ptr + current_block_size + SIZE_T_SIZE);
-    if( !(right_block_size & 1) ) return true;
+right_free_block(void* ptr) {
+
+    header_block* current = (header_block*)((char*)ptr - HEADER);
+    size_t block_size = current->size - 1;
+    header_block* right_block = (header_block*)((char*)ptr + block_size + FOOTER);
+
+    size_t right_block_size = right_block->size;
+
+    if(right_block_size && right_block_size % 2 == 0) return true;
     return false;
 }
 
 void
-skip_block(void* ptr, void** free_ptr){
-    void** next_ptr = (void**)ptr;
-    void** prev_ptr = (void**)((char*)ptr + PTR_SIZE);
+skip_block(header_block* block, header_block** free_ptr){
 
-    void* next_block = *next_ptr;
-
-    if(*prev_ptr == NULL){
-        *free_ptr = next_block;
+    if(block->prev == NULL){
+        (*free_ptr) = block->next;
     }
-    else if(*prev_ptr != NULL){
-        void* prev_ptr_prev_block = *prev_ptr;
-        void** next_ptr_prev_block = (void**)((char*)prev_ptr_prev_block - PTR_SIZE);
-        *next_ptr_prev_block = next_block;
+    else if(block->prev != NULL){
+        block->prev->next = block->next;
     }
-
-    if(next_block != NULL){
-        void** prev_ptr_next_block = (void**)((char*)next_block + PTR_SIZE);
-        *prev_ptr_next_block = NULL;
+    if(block->next != NULL){
+        block->next->prev = block->prev;
     }
 }
 
-void*
-coalescing_rl(void** free_ptr, void* ptr){
+header_block*
+coalescing_rl(header_block** free_ptr, void* ptr){
 
-    size_t block_size = *(size_t*)((char*)ptr - SIZE_T_SIZE) - 1;
-    size_t left_size = *(size_t*)((char*)ptr - SIZE_T_SIZE - SIZE_T_SIZE);
-    size_t right_size = *(size_t*)((char*)ptr + block_size + SIZE_T_SIZE);
+    header_block* block = (header_block*)((char*)ptr - HEADER);
+    size_t block_size = block->size - 1;
 
-    size_t total_new_size = block_size + left_size + right_size + (4 * SIZE_T_SIZE) + (2 * PTR_SIZE);
+    footer_block* left_block_footer = (footer_block*)((char*)ptr - HEADER - FOOTER);
+    header_block* left_block = (header_block*)((char*)left_block_footer - left_block_footer->size - HEADER);
 
-    void* left_block = (void*)((char*)ptr - (2 * SIZE_T_SIZE) - left_size - (2 * PTR_SIZE));
-    void* right_block = (void*)((char*)ptr + block_size + (2 * SIZE_T_SIZE));
+    header_block* right_block = (header_block*)((char*)ptr + block_size + FOOTER);
+    footer_block* right_block_footer = (footer_block*)((char*)right_block + HEADER + right_block->size);
+
+    size_t total_new_size = block_size + left_block->size + right_block->size + (2 * HEADER) + (2 * FOOTER);
 
     skip_block(left_block, free_ptr);
     skip_block(right_block, free_ptr);
 
-    size_t* header = (size_t*)((char*)left_block - SIZE_T_SIZE);
-    size_t* footer = (size_t*)((char*)right_block + (2 * PTR_SIZE) + right_size);
+    left_block->size = total_new_size;
+    right_block_footer->size = total_new_size;
 
-    *header = total_new_size;
-    *footer = total_new_size;
+    header_block* new_block = left_block;
 
-    void* new_ptr = left_block;
-
-    return new_ptr;
+    return new_block;
 }
 
-void*
-coalescing_l(void** free_ptr, void* ptr){
+header_block*
+coalescing_l(header_block** free_ptr, void* ptr){
 
-    size_t block_size = *(size_t*)((char*)ptr - SIZE_T_SIZE) - 1;
-    size_t left_size = *(size_t*)((char*)ptr - SIZE_T_SIZE - SIZE_T_SIZE);
+    header_block* block = (header_block*)((char*)ptr - HEADER);
+    size_t block_size = block->size - 1;
 
-    size_t total_new_size = block_size + left_size + (2 * SIZE_T_SIZE);
+    footer_block* block_footer = (footer_block*)((char*)ptr + block_size);
 
-    void* left_block = (void*)((char*)ptr - (2 * SIZE_T_SIZE) - left_size - (2 * PTR_SIZE));
+    footer_block* left_block_footer = (footer_block*)((char*)ptr - HEADER - FOOTER);
+    header_block* left_block = (header_block*)((char*)left_block_footer - left_block_footer->size - HEADER);
+
+    size_t total_new_size = block_size + left_block->size + HEADER + FOOTER;
 
     skip_block(left_block, free_ptr);
 
-    size_t* header = (size_t*)((char*)left_block - SIZE_T_SIZE);
-    size_t* footer = (size_t*)((char*)ptr + block_size);
+    left_block->size = total_new_size;
+    block_footer->size = total_new_size;
 
-    *header = total_new_size;
-    *footer = total_new_size;
+    header_block* new_block = left_block;
 
-    void* new_ptr = left_block;
-
-    return new_ptr;
+    return new_block;
 }
 
-void*
-coalescing_r(void** free_ptr, void* ptr){
+header_block*
+coalescing_r(header_block** free_ptr, void* ptr){
 
-    size_t block_size = *(size_t*)((char*)ptr - SIZE_T_SIZE) - 1;
-    size_t right_size = *(size_t*)((char*)ptr + block_size + SIZE_T_SIZE);
+    header_block* block = (header_block*)((char*)ptr - HEADER);
+    size_t block_size = block->size - 1;
 
-    size_t total_new_size = block_size + right_size + (2 * SIZE_T_SIZE);
+    header_block* right_block = (header_block*)((char*)ptr + block_size + FOOTER);
+    footer_block* right_block_footer = (footer_block*)((char*)right_block + HEADER + right_block->size);
 
-    void* right_block = (void*)((char*)ptr + block_size + (2 * SIZE_T_SIZE));
+    size_t total_new_size = block_size + right_block->size + HEADER + FOOTER;
 
     skip_block(right_block, free_ptr);
 
-    size_t* header = (size_t*)((char*)ptr - SIZE_T_SIZE);
-    size_t* footer = (size_t*)((char*)right_block + (2 * PTR_SIZE) + right_size);
+    block->size = total_new_size;
+    right_block_footer->size = total_new_size;
 
-    *header = total_new_size;
-    *footer = total_new_size;
+    header_block* new_block = block;
 
-    void* new_ptr = ptr;
-
-    return new_ptr;
+    return new_block;
 }
 
-// free - Freeing a block does nothing.
-void my_free(void* ptr) {
-
-    size_t current_block_size = *(size_t*)((char*)ptr - SIZE_T_SIZE) - 1;
+void
+my_free(void* ptr) {
 
     bool left_free = left_free_block(ptr);
     bool right_free = right_free_block(ptr);
 
-    void* new_block = ptr;
+    header_block* new_block = (header_block*)((char*)ptr - HEADER);
+    footer_block* new_block_footer = (footer_block*)((char*)ptr + new_block->size);
 
     if(left_free && right_free){
         new_block = coalescing_rl(&free_ptr, ptr);
@@ -469,21 +392,21 @@ void my_free(void* ptr) {
     else if(right_free){
         new_block = coalescing_r(&free_ptr, ptr);
     }
-
-    void** next_ptr_current_block = (void**)new_block;
-    void** prev_ptr_current_block = (void**)((char*)new_block + PTR_SIZE);
-
-    *next_ptr_current_block = free_ptr;
-    free_ptr = next_ptr_current_block;
-
-    *prev_ptr_current_block = NULL;
-
-    void* next_block = (void*)(*next_ptr_current_block);
-    if( next_block != NULL ){
-        void** prev_ptr_next_block = (void**)((char*)next_block + PTR_SIZE);
-        *prev_ptr_next_block = next_ptr_current_block;
+    else{
+        (new_block->size)--;
+        (new_block_footer->size)--;
     }
 
+    new_block->next = free_ptr;
+
+    header_block* next_block = free_ptr;
+    free_ptr = new_block;
+
+    new_block->prev = NULL;
+
+    if(next_block != NULL){
+        next_block->prev = new_block;
+    }
 }
 
 // realloc - Implemented simply in terms of malloc and free
