@@ -84,11 +84,7 @@ typedef struct footer_block {
 #define HEADER sizeof(header_block)
 #define FOOTER sizeof(footer_block)
 
-// Free ptr variable
 static header_block* free_ptr = NULL;
-
-static void* heap_start_boundary = NULL;
-static void* heap_start = NULL;
 
 void test_my_malloc();
 void change_prev_next_values(header_block* block, header_block* change_next, header_block* change_prev);
@@ -98,12 +94,6 @@ header_block* construct_free_block(size_t size);
 // calls are made.  Since this is a very simple implementation, we just
 // return success.
 int my_init() {
-
-    footer_block* boundary = mem_sbrk(FOOTER);
-    boundary->size = 1;
-
-    heap_start_boundary = (void*)boundary;
-    heap_start = (void*)((char*)boundary + FOOTER);
 
 #ifdef DEBUG_CODE
     test_my_malloc();
@@ -172,7 +162,7 @@ traverse_free_list(header_block** free_ptr, size_t requested_size){
 
     while(current != NULL){
 
-        sleep(2);
+        /*sleep(2);*/
 
         if(current->size >= requested_size){
             if(current->prev == NULL){
@@ -270,7 +260,8 @@ bool
 left_free_block(void* ptr) {
 
     footer_block* left_block = (footer_block*)((char*)ptr - HEADER - FOOTER);
-    if ((void*)left_block < heap_start) return false;
+
+    if ((void*)left_block < mem_heap_lo()) return false;
 
     size_t left_block_size = left_block->size;
 
@@ -381,7 +372,7 @@ my_free(void* ptr) {
     bool right_free = right_free_block(ptr);
 
     header_block* new_block = (header_block*)((char*)ptr - HEADER);
-    footer_block* new_block_footer = (footer_block*)((char*)ptr + new_block->size);
+    footer_block* new_block_footer = (footer_block*)((char*)ptr + (new_block->size - 1));
 
     if(left_free && right_free){
         new_block = coalescing_rl(&free_ptr, ptr);
