@@ -95,6 +95,8 @@ header_block* construct_free_block(size_t size);
 // return success.
 int my_init() {
 
+    free_ptr = NULL;
+
 #ifdef DEBUG_CODE
     test_my_malloc();
 #endif
