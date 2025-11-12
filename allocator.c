@@ -155,7 +155,7 @@ test_my_malloc() {
     printf("Testing Complete :)\n\n\n");
 }
 
-void*
+header_block*
 traverse_free_list(header_block** free_ptr, size_t requested_size){
 
     header_block* current = *free_ptr;
@@ -196,6 +196,10 @@ my_malloc(size_t size){
     if(free_block == NULL){
 
         void* new_block = mem_sbrk(HEADER + aligned_size + FOOTER);
+
+        if(new_block == (void*) - 1){
+            return (void*) - 1;
+        }
 
         header_block* new_header = (header_block*)new_block;
         footer_block* new_footer = (footer_block*)((char*)new_block + HEADER + aligned_size);
@@ -276,6 +280,8 @@ right_free_block(void* ptr) {
     size_t block_size = current->size - 1;
     header_block* right_block = (header_block*)((char*)ptr + block_size + FOOTER);
 
+    if ((void*)right_block > mem_heap_hi()) return false;
+
     size_t right_block_size = right_block->size;
 
     if(right_block_size && right_block_size % 2 == 0) return true;
@@ -294,6 +300,8 @@ skip_block(header_block* block, header_block** free_ptr){
     if(block->next != NULL){
         block->next->prev = block->prev;
     }
+    block->next = NULL;
+    block->prev = NULL;
 }
 
 header_block*
