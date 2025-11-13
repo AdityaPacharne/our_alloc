@@ -421,7 +421,7 @@ my_realloc(void* ptr, size_t size) {
 
     size_t difference = block_size - aligned_size;
 
-    if(difference > 0 && difference >= HEADER + FOOTER){
+    if(difference >= 0 && difference >= HEADER + FOOTER){
 
         header_block* new_h = (header_block*)ptr;
         footer_block* new_f = (footer_block*)((char*)ptr + aligned_size);
@@ -445,13 +445,35 @@ my_realloc(void* ptr, size_t size) {
         free_ptr = split_h;
 
     }
-    else if(difference > 0){
+    else if(difference >= 0){
         return ptr;
     }
 
     bool left_free = left_free_block(ptr);
     bool right_free = right_free_block(ptr);
 
+    if(!left_free && !right_free){
+
+        void* newptr = my_malloc(aligned_size + HEADER + FOOTER);
+        if(new_ptr == NULL) return NULL;
+
+        header_block* newptr_h = (header_block*)newptr;
+        footer_block* newptr_f = (footer_block*)((char*)newptr + HEADER + aligned_size);
+
+        newptr_h->size = aligned_size | 1;
+        newptr_f->size = aligned_size | 1;
+
+        newptr_h->next = NULL;
+        newptr_h->prev = NULL;
+
+        void* newptr_s = (void*)((char*)newptr + HEADER);
+
+        memcpy(newptr_s, ptr, block_size);
+
+        my_free(ptr);
+
+        return newptr_s;
+    }
 }
 
 // realloc - Implemented simply in terms of malloc and free
