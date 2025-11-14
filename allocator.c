@@ -307,27 +307,73 @@ skip_block(header_block* block, header_block** free_ptr){
     block->prev = NULL;
 }
 
+// bd is block data
+// Here ptr is the start of the space not the actual block
+void
+current_bd(void* ptr, header_block** header, footer_block** footer, size_t* size){
+
+    header_block* current_h = (header_block*)((char*)ptr - HEADER);
+    size_t current_size = current_h->size & (~1);
+    footer_block* current_f = (footer_block*)((char*)ptr + current_size);
+
+    *header = current_h;
+    *footer = current_f;
+    *size = current_size;
+}
+
+void
+left_bd(void* ptr, header_block** header, footer_block** footer, size_t* size){
+
+    header_block* current_h;
+    footer_block* current_f;
+    size_t current_size;
+    current_bd(ptr, &current_h, &current_f, &current_size);
+
+    footer_block* left_f = (footer_block*)((char*)ptr - HEADER - FOOTER);
+    size_t left_size = left_f->size;
+    header_block* left_h = (header_block*)((char*)left_f - left_size - HEADER);
+
+    *header = left_h;
+    *footer = left_f;
+    *size = left_size;
+}
+
+void
+right_bd(void* ptr, header_block** header, footer_block** footer, size_t* size){
+
+    header_block* current_h;
+    footer_block* current_f;
+    size_t current_size;
+    current_bd(ptr, &current_h, &current_f, &current_size);
+
+    header_block* right_h = (header_block*)((char*)ptr + current_size + FOOTER);
+    size_t right_size = right_h->size;
+    footer_block* right_f = (footer_block*)((char*)right_h + HEADER + right_size);
+
+    *header = right_h;
+    *footer = right_f;
+    *size = right_size;
+}
+
 header_block*
 coalescing_rl(header_block** free_ptr, void* ptr){
 
-    header_block* block = (header_block*)((char*)ptr - HEADER);
-    size_t block_size = block->size - 1;
+    header_block *current_h, *left_h, *right_h;
+    footer_block *current_f, *left_f, *right_f;
+    size_t current_size, left_size, right_size;
 
-    footer_block* left_block_footer = (footer_block*)((char*)ptr - HEADER - FOOTER);
-    header_block* left_block = (header_block*)((char*)left_block_footer - left_block_footer->size - HEADER);
+    current_bd(ptr, &current_h, &current_f, &current_size);
+    left_bd(ptr, &left_h, &left_f, &left_size);
+    right_bd(ptr, &right_h, &right_f, &right_size);
 
-    header_block* right_block = (header_block*)((char*)ptr + block_size + FOOTER);
-    footer_block* right_block_footer = (footer_block*)((char*)right_block + HEADER + right_block->size);
+    skip_block(left_h, free_ptr);
+    skip_block(right_h, free_ptr);
 
-    size_t total_new_size = block_size + left_block->size + right_block->size + (2 * HEADER) + (2 * FOOTER);
+    size_t total_new_size = current_size + left_size + right_size + (2 * HEADER) + (2 * FOOTER);
+    left_h->size = total_new_size;
+    right_f->size = total_new_size;
 
-    skip_block(left_block, free_ptr);
-    skip_block(right_block, free_ptr);
-
-    left_block->size = total_new_size;
-    right_block_footer->size = total_new_size;
-
-    header_block* new_block = left_block;
+    header_block* new_block = left_h;
 
     return new_block;
 }
@@ -335,22 +381,20 @@ coalescing_rl(header_block** free_ptr, void* ptr){
 header_block*
 coalescing_l(header_block** free_ptr, void* ptr){
 
-    header_block* block = (header_block*)((char*)ptr - HEADER);
-    size_t block_size = block->size - 1;
+    header_block *current_h, *left_h;
+    footer_block *current_f, *left_f;
+    size_t current_size, left_size;
 
-    footer_block* block_footer = (footer_block*)((char*)ptr + block_size);
+    current_bd(ptr, &current_h, &current_f, &current_size);
+    left_bd(ptr, &left_h, &left_f, &left_size);
 
-    footer_block* left_block_footer = (footer_block*)((char*)ptr - HEADER - FOOTER);
-    header_block* left_block = (header_block*)((char*)left_block_footer - left_block_footer->size - HEADER);
+    skip_block(left_h, free_ptr);
 
-    size_t total_new_size = block_size + left_block->size + HEADER + FOOTER;
+    size_t total_new_size = current_size + left_size + HEADER + FOOTER;
+    left_h->size = total_new_size;
+    current_f->size = total_new_size;
 
-    skip_block(left_block, free_ptr);
-
-    left_block->size = total_new_size;
-    block_footer->size = total_new_size;
-
-    header_block* new_block = left_block;
+    header_block* new_block = left_h;
 
     return new_block;
 }
@@ -358,20 +402,20 @@ coalescing_l(header_block** free_ptr, void* ptr){
 header_block*
 coalescing_r(header_block** free_ptr, void* ptr){
 
-    header_block* block = (header_block*)((char*)ptr - HEADER);
-    size_t block_size = block->size - 1;
+    header_block *current_h, *right_h;
+    footer_block *current_f, *right_f;
+    size_t current_size, right_size;
 
-    header_block* right_block = (header_block*)((char*)ptr + block_size + FOOTER);
-    footer_block* right_block_footer = (footer_block*)((char*)right_block + HEADER + right_block->size);
+    current_bd(ptr, &current_h, &current_f, &current_size);
+    right_bd(ptr, &right_h, &right_f, &right_size);
 
-    size_t total_new_size = block_size + right_block->size + HEADER + FOOTER;
+    skip_block(right_h, free_ptr);
 
-    skip_block(right_block, free_ptr);
+    size_t total_new_size = current_size + right_size + HEADER + FOOTER;
+    current_h->size = total_new_size;
+    right_f->size = total_new_size;
 
-    block->size = total_new_size;
-    right_block_footer->size = total_new_size;
-
-    header_block* new_block = block;
+    header_block* new_block = current_h;
 
     return new_block;
 }
@@ -385,15 +429,9 @@ my_free(void* ptr) {
     header_block* new_block = (header_block*)((char*)ptr - HEADER);
     footer_block* new_block_footer = (footer_block*)((char*)ptr + (new_block->size - 1));
 
-    if(left_free && right_free){
-        new_block = coalescing_rl(&free_ptr, ptr);
-    }
-    else if(left_free){
-        new_block = coalescing_l(&free_ptr, ptr);
-    }
-    else if(right_free){
-        new_block = coalescing_r(&free_ptr, ptr);
-    }
+    if(left_free && right_free) new_block = coalescing_rl(&free_ptr, ptr);
+    else if(left_free) new_block = coalescing_l(&free_ptr, ptr);
+    else if(right_free) new_block = coalescing_r(&free_ptr, ptr);
     else{
         (new_block->size)--;
         (new_block_footer->size)--;
@@ -409,6 +447,31 @@ my_free(void* ptr) {
     if(next_block != NULL){
         next_block->prev = new_block;
     }
+}
+
+void*
+no_block_found(void* ptr, size_t size){
+    
+    header_block* current_h = (header_block*)ptr;
+    size_t current_size = current_h->size & (~1);
+
+    void* newptr = my_malloc(size + HEADER + FOOTER);
+    if(newptr == NULL) return NULL;
+
+    header_block* newptr_h = (header_block*)newptr;
+    footer_block* newptr_f = (footer_block*)((char*)newptr + HEADER + size);
+
+    newptr_h->size = size | 1;
+    newptr_f->size = size | 1;
+    newptr_h->next = NULL;
+    newptr_h->prev = NULL;
+
+    void* newptr_s = (void*)((char*)newptr + HEADER);
+
+    memcpy(newptr_s, ptr, current_size);
+    my_free(ptr);
+
+    return newptr_s;
 }
 
 void*
@@ -434,26 +497,24 @@ my_realloc(void* ptr, size_t size) {
     bool right_free = right_free_block(ptr);
 
     if(!left_free && !right_free){
+        return no_block_found(ptr, aligned_size);
+    }
 
-        void* newptr = my_malloc(aligned_size + HEADER + FOOTER);
-        if(new_ptr == NULL) return NULL;
+    else if(left_free){
 
-        header_block* newptr_h = (header_block*)newptr;
-        footer_block* newptr_f = (footer_block*)((char*)newptr + HEADER + aligned_size);
+        header_block* block = (header_block*)((char*)ptr - HEADER);
+        size_t left_size = left_block->size;
 
-        newptr_h->size = aligned_size | 1;
-        newptr_f->size = aligned_size | 1;
+        size_t merged_size = left_size + block_size + HEADER + FOOTER;
 
-        newptr_h->next = NULL;
-        newptr_h->prev = NULL;
+        if(merged_size - aligned_size >= HEADER + FOOTER){
+            void* split = split_block(left_block, aligned_size, difference);
+            memcpy(split, ptr, block_size);
+            return split;
+        }
+        else{
 
-        void* newptr_s = (void*)((char*)newptr + HEADER);
-
-        memcpy(newptr_s, ptr, block_size);
-
-        my_free(ptr);
-
-        return newptr_s;
+        }
     }
 }
 
