@@ -189,6 +189,36 @@ traverse_free_list(header_block** free_ptr, size_t requested_size){
 }
 
 void*
+split_block(header_block* block, size_t allocated_size, size_t difference){
+
+    size_t useful_space = difference - HEADER - FOOTER;
+
+    header_block* allocated_h = (header_block*)block;
+    footer_block* allocated_f = (footer_block*)((char*)block + HEADER + allocated_size);
+
+    allocated_h->size = allocated_size | 1;
+    allocated_f->size = allocated_size | 1;
+    allocated_h->next = NULL;
+    allocated_h->prev = NULL;
+
+    header_block* split_h = (header_block*)((char*)allocated_f + FOOTER);
+    footer_block* split_f = (footer_block*)((char*)split_h + HEADER + useful_space);
+
+    split_h->size = useful_space;
+    split_f->size = useful_space;
+
+    split_h->next = free_ptr;
+    split_h->prev = NULL;
+
+    if(free_ptr != NULL) free_ptr->prev = split_h;
+    free_ptr = split_h;
+
+    void* allocated_s = (void*)((char*)allocated_h + HEADER);
+
+    return allocated_s;
+}
+
+void*
 my_malloc(size_t size){
 
     size_t aligned_size = ALIGN(size);
@@ -215,51 +245,22 @@ my_malloc(size_t size){
     }
 
     size_t block_size = free_block->size;
+    size_t difference = block_size - aligned_size;
 
-    if(block_size - aligned_size >= HEADER + FOOTER){
+    void* allocated_s = NULL;
 
-        size_t total_split = block_size - aligned_size;
-        size_t useful_space = total_split - HEADER - FOOTER;
-
-        header_block* allocated_header = (header_block*)free_block;
-        footer_block* allocated_footer = (footer_block*)((char*)free_block + HEADER + aligned_size);
-
-        allocated_header->size = aligned_size + 1;
-        allocated_header->next = NULL;
-        allocated_header->prev = NULL;
-
-        allocated_footer->size = aligned_size + 1;
-
-        header_block* split_header = (header_block*)((char*)allocated_footer + FOOTER);
-        footer_block* split_footer = (footer_block*)((char*)split_header + HEADER + useful_space);
-
-        split_header->size = useful_space;
-        split_footer->size = useful_space;
-
-        split_header->next = free_ptr;
-        split_header->prev = NULL;
-
-        if(free_ptr != NULL){
-            free_ptr->prev = split_header;
-        }
-
-        free_ptr = split_header;
-
-        void* allocated_space = (void*)((char*)allocated_header + HEADER);
-
-        return allocated_space;
+    if(difference >= HEADER + FOOTER){
+        allocated_s = split_block(free_block, aligned_size, difference);
     }
     else{
         header_block* header = free_block;
         footer_block* footer = (footer_block*)((char*)header + HEADER + header->size);
-
         (header->size)++;
         (footer->size)++;
-
-        void* space = (void*)((char*)free_block + HEADER);
-
-        return space;
+        allocated_s = (void*)((char*)free_block + HEADER);
     }
+
+    return allocated_s;
 }
 
 bool
@@ -422,28 +423,8 @@ my_realloc(void* ptr, size_t size) {
     size_t difference = block_size - aligned_size;
 
     if(difference >= 0 && difference >= HEADER + FOOTER){
-
-        header_block* new_h = (header_block*)ptr;
-        footer_block* new_f = (footer_block*)((char*)ptr + aligned_size);
-
-        new_h->size = aligned_size | 1;
-        new_f->size = aligned_size | 1;
-        new_h->next = NULL;
-        new_h->prev = NULL;
-
-        size_t useful_space = difference - HEADER - FOOTER;
-
-        header_block* split_h = (header_block*)((char*)new_f + FOOTER);
-        footer_block* split_f = (footer_block*)((char*)split_h + useful_space);
-
-        split_h->size = useful_space;
-        split_f->size = useful_space;
-
-        split_h->next = free_ptr;
-        split_h->prev = NULL;
-        if(free_ptr != NULL) free_ptr->prev = split_h;
-        free_ptr = split_h;
-
+        void* allocated_s = split_block(block, aligned_size, difference);
+        return allocated_s;
     }
     else if(difference >= 0){
         return ptr;
