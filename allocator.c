@@ -450,7 +450,7 @@ my_free(void* ptr) {
 }
 
 void*
-no_block_found(void* ptr, size_t size){
+copy_block(void* ptr, size_t size){
     
     header_block* current_h = (header_block*)ptr;
     size_t current_size = current_h->size & (~1);
@@ -474,14 +474,37 @@ no_block_found(void* ptr, size_t size){
     return newptr_s;
 }
 
+size_t
+maximum_size(size_t a, size_t b){
+    if(a >= b) return a;
+    return b;
+}
+
+size_t
+minimum_size(size_t a, size_t b){
+    if(a <= b) return a;
+    return b;
+}
+
+void*
+coalesce_copy(void* merged_ptr, void* copy_from, size_t block_size, size_t size){
+
+    void* merged_s = (void*)((char*)merged_ptr + HEADER);
+    memcpy(merged_s, copy_from, block_size);
+
+    header_block* merged_h = (header_block*)merged_ptr;
+    size_t split_difference = merged_h->size - size;
+    void* new_s = split_block(merged_h, size, split_difference);
+    return new_s;
+}
+
 void*
 my_realloc(void* ptr, size_t size) {
 
     size_t aligned_size = ALIGN(size);
 
-    header_block* block = (block_header*)ptr;
+    header_block* block = (header_block*)ptr;
     size_t block_size = block->size & (~1);
-    footer_block* block = (footer_block*)((char*)ptr + block_size);
 
     size_t difference = block_size - aligned_size;
 
@@ -496,26 +519,24 @@ my_realloc(void* ptr, size_t size) {
     bool left_free = left_free_block(ptr);
     bool right_free = right_free_block(ptr);
 
+    void* new_s = NULL;
+
     if(!left_free && !right_free){
-        return no_block_found(ptr, aligned_size);
+        new_s = copy_block(ptr, aligned_size);
     }
-
+    else if(left_free && right_free){
+        void* current_rl = coalescing_rl(&free_ptr, ptr);
+        new_s = coalesce_copy(current_rl, ptr, block_size, size);
+    }
     else if(left_free){
-
-        header_block* block = (header_block*)((char*)ptr - HEADER);
-        size_t left_size = left_block->size;
-
-        size_t merged_size = left_size + block_size + HEADER + FOOTER;
-
-        if(merged_size - aligned_size >= HEADER + FOOTER){
-            void* split = split_block(left_block, aligned_size, difference);
-            memcpy(split, ptr, block_size);
-            return split;
-        }
-        else{
-
-        }
+        void* current_l = coalescing_l(&free_ptr, ptr);
+        new_s = coalesce_copy(current_l, ptr, block_size, size);
     }
+    else if(right_free){
+        void* current_r = coalescing_r(&free_ptr, ptr);
+        new_s = coalesce_copy(current_r, ptr, block_size, size);
+    }
+    return new_s;
 }
 
 // realloc - Implemented simply in terms of malloc and free
