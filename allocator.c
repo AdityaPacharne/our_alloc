@@ -447,6 +447,7 @@ my_free(void* ptr) {
     if(next_block != NULL){
         next_block->prev = new_block;
     }
+
 }
 
 void*
@@ -474,18 +475,6 @@ copy_block(void* ptr, size_t size){
     return newptr_s;
 }
 
-size_t
-maximum_size(size_t a, size_t b){
-    if(a >= b) return a;
-    return b;
-}
-
-size_t
-minimum_size(size_t a, size_t b){
-    if(a <= b) return a;
-    return b;
-}
-
 void*
 coalesce_copy(void* merged_ptr, void* copy_from, size_t block_size, size_t size){
 
@@ -503,7 +492,7 @@ my_realloc(void* ptr, size_t size) {
 
     size_t aligned_size = ALIGN(size);
 
-    header_block* block = (header_block*)ptr;
+    header_block* block = (header_block*)((char*)ptr - HEADER);
     size_t block_size = block->size & (~1);
 
     size_t difference = block_size - aligned_size;
