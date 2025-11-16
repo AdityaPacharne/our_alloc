@@ -453,26 +453,16 @@ my_free(void* ptr) {
 void*
 copy_block(void* ptr, size_t size){
     
-    header_block* current_h = (header_block*)ptr;
+    header_block* current_h = (header_block*)((char*)ptr - HEADER);;
     size_t current_size = current_h->size & (~1);
 
-    void* newptr = my_malloc(size + HEADER + FOOTER);
+    void* newptr = my_malloc(size);
     if(newptr == NULL) return NULL;
 
-    header_block* newptr_h = (header_block*)newptr;
-    footer_block* newptr_f = (footer_block*)((char*)newptr + HEADER + size);
-
-    newptr_h->size = size | 1;
-    newptr_f->size = size | 1;
-    newptr_h->next = NULL;
-    newptr_h->prev = NULL;
-
-    void* newptr_s = (void*)((char*)newptr + HEADER);
-
-    memcpy(newptr_s, ptr, current_size);
+    memcpy(newptr, ptr, current_size);
     my_free(ptr);
 
-    return newptr_s;
+    return newptr;
 }
 
 void*
