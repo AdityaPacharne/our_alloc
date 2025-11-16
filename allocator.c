@@ -236,8 +236,8 @@ my_malloc(size_t size){
         header_block* new_header = (header_block*)new_block;
         footer_block* new_footer = (footer_block*)((char*)new_block + HEADER + aligned_size);
 
-        new_header->size = (aligned_size + 1);
-        new_footer->size = (aligned_size + 1);
+        new_header->size = aligned_size | 1;
+        new_footer->size = aligned_size | 1;
 
         void* space = (void*)((char*)new_block + HEADER);
 
@@ -255,8 +255,8 @@ my_malloc(size_t size){
     else{
         header_block* header = free_block;
         footer_block* footer = (footer_block*)((char*)header + HEADER + header->size);
-        (header->size)++;
-        (footer->size)++;
+        header->size |= 1;
+        footer->size |= 1;
         allocated_s = (void*)((char*)free_block + HEADER);
     }
 
@@ -280,7 +280,7 @@ bool
 right_free_block(void* ptr) {
 
     header_block* current = (header_block*)((char*)ptr - HEADER);
-    size_t block_size = current->size - 1;
+    size_t block_size = current->size & (~1);
     header_block* right_block = (header_block*)((char*)ptr + block_size + FOOTER);
 
     if ((void*)right_block > mem_heap_hi()) return false;
@@ -427,7 +427,7 @@ my_free(void* ptr) {
     bool right_free = right_free_block(ptr);
 
     header_block* new_block = (header_block*)((char*)ptr - HEADER);
-    footer_block* new_block_footer = (footer_block*)((char*)ptr + (new_block->size - 1));
+    footer_block* new_block_footer = (footer_block*)((char*)ptr + (new_block->size & (~1)));
 
     if(left_free && right_free) new_block = coalescing_rl(&free_ptr, ptr);
     else if(left_free) new_block = coalescing_l(&free_ptr, ptr);
