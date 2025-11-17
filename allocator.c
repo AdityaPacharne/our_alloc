@@ -272,7 +272,7 @@ left_free_block(void* ptr) {
 
     size_t left_block_size = left_block->size;
 
-    if(left_block_size && (left_block_size % 2) == 0) return true;
+    if(left_block_size % 2 == 0) return true;
     return false;
 }
 
@@ -287,7 +287,7 @@ right_free_block(void* ptr) {
 
     size_t right_block_size = right_block->size;
 
-    if(right_block_size && right_block_size % 2 == 0) return true;
+    if(right_block_size % 2 == 0) return true;
     return false;
 }
 
@@ -453,7 +453,7 @@ my_free(void* ptr) {
 void*
 copy_block(void* ptr, size_t size){
     
-    header_block* current_h = (header_block*)((char*)ptr - HEADER);;
+    header_block* current_h = (header_block*)((char*)ptr - HEADER);
     size_t current_size = current_h->size & (~1);
 
     void* newptr = my_malloc(size);
@@ -505,15 +505,15 @@ my_realloc(void* ptr, size_t size) {
     }
     else if(left_free && right_free){
         void* current_rl = coalescing_rl(&free_ptr, ptr);
-        new_s = coalesce_copy(current_rl, ptr, block_size, size);
+        new_s = coalesce_copy(current_rl, ptr, block_size, aligned_size);
     }
     else if(left_free){
         void* current_l = coalescing_l(&free_ptr, ptr);
-        new_s = coalesce_copy(current_l, ptr, block_size, size);
+        new_s = coalesce_copy(current_l, ptr, block_size, aligned_size);
     }
     else if(right_free){
         void* current_r = coalescing_r(&free_ptr, ptr);
-        new_s = coalesce_copy(current_r, ptr, block_size, size);
+        new_s = coalesce_copy(current_r, ptr, block_size, aligned_size);
     }
     return new_s;
 }
