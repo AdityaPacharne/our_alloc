@@ -164,8 +164,6 @@ traverse_free_list(header_block** free_ptr, size_t requested_size){
 
     while(current != NULL){
 
-        /*sleep(2);*/
-
         if(current->size >= requested_size){
             if(current->prev == NULL){
                 (*free_ptr) = current->next;
@@ -451,33 +449,6 @@ my_free(void* ptr) {
 }
 
 void*
-copy_block(void* ptr, size_t size){
-    
-    header_block* current_h = (header_block*)((char*)ptr - HEADER);
-    size_t current_size = current_h->size & (~1);
-
-    void* newptr = my_malloc(size);
-    if(newptr == NULL) return NULL;
-
-    memcpy(newptr, ptr, current_size);
-    my_free(ptr);
-
-    return newptr;
-}
-
-void*
-coalesce_copy(void* merged_ptr, void* copy_from, size_t block_size, size_t size){
-
-    void* merged_s = (void*)((char*)merged_ptr + HEADER);
-    memcpy(merged_s, copy_from, block_size);
-
-    header_block* merged_h = (header_block*)merged_ptr;
-    size_t split_difference = merged_h->size - size;
-    void* new_s = split_block(merged_h, size, split_difference);
-    return new_s;
-}
-
-void*
 my_realloc(void* ptr, size_t size) {
 
     size_t aligned_size = ALIGN(size);
@@ -487,11 +458,11 @@ my_realloc(void* ptr, size_t size) {
 
     size_t difference = block_size - aligned_size;
 
-    if(difference >= 0 && difference >= HEADER + FOOTER){
+    if(block_size > aligned_size && difference >= HEADER + FOOTER){
         void* allocated_s = split_block(block, aligned_size, difference);
         return allocated_s;
     }
-    else if(difference >= 0){
+    else if(block_size > aligned_size){
         return ptr;
     }
 
@@ -499,21 +470,55 @@ my_realloc(void* ptr, size_t size) {
     bool right_free = right_free_block(ptr);
 
     void* new_s = NULL;
+    void* current = NULL;
 
     if(!left_free && !right_free){
-        new_s = copy_block(ptr, aligned_size);
+        current = (void*)((char*)ptr - HEADER);
     }
     else if(left_free && right_free){
-        void* current_rl = coalescing_rl(&free_ptr, ptr);
-        new_s = coalesce_copy(current_rl, ptr, block_size, aligned_size);
+        current = coalescing_rl(&free_ptr, ptr);
     }
     else if(left_free){
-        void* current_l = coalescing_l(&free_ptr, ptr);
-        new_s = coalesce_copy(current_l, ptr, block_size, aligned_size);
+        current = coalescing_l(&free_ptr, ptr);
     }
     else if(right_free){
-        void* current_r = coalescing_r(&free_ptr, ptr);
-        new_s = coalesce_copy(current_r, ptr, block_size, aligned_size);
+        current = coalescing_r(&free_ptr, ptr);
+    }
+
+    header_block* current_h = (header_block*)current;
+    size_t current_size = current_h->size & (~1);
+    footer_block* current_f = (footer_block*)((char*)current_h + HEADER + current_size);
+
+    void* current_s = (void*)((char*)current_h + HEADER);
+    void* current_e = (void*)((char*)current_f + FOOTER);
+
+
+    if(current_size < aligned_size){
+        if(current_e == (char*)mem_heap_hi() + 1){
+            memmove(current_s, ptr, block_size);
+            size_t space_needed = aligned_size - current_size;
+            mem_sbrk(space_needed);
+            footer_block* space_footer = (footer_block*)((char*)current_h + HEADER + aligned_size);
+            current_h->size = aligned_size | 1;
+            space_footer->size = aligned_size | 1;
+            new_s = current_s;
+        }
+        else{
+            new_s = my_malloc(aligned_size);
+            memmove(new_s, ptr, block_size);
+        }
+    }
+    else{
+        memmove(current_s, ptr, block_size);
+        if(current_size - aligned_size >= HEADER + FOOTER){
+            size_t split_difference = current_size - aligned_size;
+            new_s = split_block(current_h, aligned_size, split_difference);
+        }
+        else{
+            current_h->size |= 1;
+            current_f->size |= 1;
+            return current_s;
+        }
     }
     return new_s;
 }
