@@ -6,6 +6,11 @@ Just a final year student trying to understand how malloc really works under the
 
 ---
 
+## Development Process
+I documented the entire development process on my [YouTube channel](https://youtube.com/@engineer_for_fun). Each video is ~1 hour of real coding (no LLM assistance, all mistakes included). If you want to see someone struggle through memory allocator bugs in real-time, check it out.
+
+---
+
 ## What it does
 - **malloc** - allocates memory blocks with 8-byte alignment
 - **free** - deallocates memory and immediately coalesces adjacent free blocks
@@ -90,16 +95,11 @@ That's it. The benchmarking harness tests throughput, utilization, and correctne
 ---
 
 ## Current Status
-✅ malloc - working  
-✅ free - working  
-✅ coalescing - working  
-✅ splitting - working  
-🚧 realloc - in progress (has bugs, working on fixes)
-
----
-
-## Development Process
-I documented the entire development process on my [YouTube channel](https://youtube.com/@engineer_for_fun). Each video is ~1 hour of real coding (no LLM assistance, all mistakes included). If you want to see someone struggle through memory allocator bugs in real-time, check it out.
+malloc - working  
+free - working  
+coalescing - working  
+splitting - working  
+realloc - in progress (has bugs, working on fixes)
 
 ---
 
