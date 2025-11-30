@@ -11,11 +11,11 @@
  */
 
 #include <math.h>
-#include "./mdriver.h"
-#include "./validator.h"
+#include "./benchmark/mdriver.h"
+#include "./benchmark/validator.h"
 
 #ifdef GET_RUNNINGTIME
-  #include "./fasttime.h"
+  #include "./benchmark/fasttime.h"
 #endif
 /******************************
  * Private compound data types

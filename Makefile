@@ -27,25 +27,43 @@ HEADERS := \
 # If you add a new file called "filename.c", you should
 # add "filename.o \" to this list.
 OBJS := \
-	memlib.o
+	benchmark/memlib.o
 
-MDRIVER_OBJS:= \
-	allocator.o \
-	bad_allocator.o \
-	clock.o \
-	fcyc.o \
-	fsecs.o \
-	ftimer.o \
-	libc_allocator.o \
-	mdriver.o \
-	my_allocator_wrappers.o
+# MDRIVER_OBJS:= \
+# 	allocator.o \
+# 	bad_allocator.o \
+# 	clock.o \
+# 	fcyc.o \
+# 	fsecs.o \
+# 	ftimer.o \
+# 	libc_allocator.o \
+# 	mdriver.o \
+# 	my_allocator_wrappers.o
 
-ALLOCATOR_TEST_OBJS:= \
-	allocator.o \
-	bad_allocator.o \
-	libc_allocator.o \
-	allocator_test.o \
-	my_allocator_wrappers.o
+MDRIVER_OBJS := \
+        allocator.o \
+        benchmark/bad_allocator.o \
+        benchmark/clock.o \
+        benchmark/fcyc.o \
+        benchmark/fsecs.o \
+        benchmark/ftimer.o \
+        benchmark/libc_allocator.o \
+        mdriver.o \
+        benchmark/my_allocator_wrappers.o
+
+# ALLOCATOR_TEST_OBJS:= \
+# 	allocator.o \
+# 	bad_allocator.o \
+# 	libc_allocator.o \
+# 	allocator_test.o \
+# 	my_allocator_wrappers.o
+
+ALLOCATOR_TEST_OBJS := \
+        allocator.o \
+        benchmark/bad_allocator.o \
+        benchmark/libc_allocator.o \
+        benchmark/allocator_test.o \
+        benchmark/my_allocator_wrappers.o
 
 # Blank line ends list.
 

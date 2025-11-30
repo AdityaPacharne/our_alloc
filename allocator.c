@@ -26,8 +26,8 @@
 #include <string.h>
 #include <stdbool.h>
 #include <unistd.h>
-#include "./allocator_interface.h"
-#include "./memlib.h"
+#include "./benchmark/allocator_interface.h"
+#include "./benchmark/memlib.h"
 
 // Don't call libc malloc!
 #define malloc(...) (USE_MY_MALLOC)
