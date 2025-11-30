@@ -14,7 +14,7 @@ I documented the entire development process on my [YouTube channel](https://yout
 ## What it does
 - **malloc** - allocates memory blocks with 8-byte alignment
 - **free** - deallocates memory and immediately coalesces adjacent free blocks
-- **realloc** - (currently broken on another branch, main branch is working, working on fixing some overwrite bugs)
+- **realloc** - reallocates memory blocks, handling both expansion and shrinking
 - Uses a **doubly linked free list** for O(1) insertion/removal of free blocks.
 - **Boundary Tags** enable O(1) coalescing with adjacent free blocks.
 - **First-fit** search strategy with block splitting
@@ -23,9 +23,9 @@ I documented the entire development process on my [YouTube channel](https://yout
 ---
 
 ## Performance
-Current score: **80.4** (changing as I tune realloc)
-- **90% throughput**
-- **71% memory utilization**
+Current score: **86.9**
+- **93.3% throughput**
+- **81.3% memory utilization**
 - Baseline score: **30.5** (naive bump allocator that doesn't even free)
 
 The baseline just moves the brk pointer on malloc, does nothing on free, and realloc always calls malloc+free even when shrinking. So yeah, we're doing *slightly* better than that.
@@ -72,8 +72,6 @@ Total overhead: **32 bytes per block**
 
 2. **LLDB debugger** - Game changer. Debugging memory allocators without a debugger is pain. With LLDB? Actually manageable.
 
-3. **Why realloc is hard** - Currently debugging issues where realloc overwrites other blocks, leading to impossible results like 1500% utilization (which is... not supposed to happen since max is 100%). This is what I'm fixing now.
-
 ---
 
 ## Project Context
@@ -91,15 +89,6 @@ make && ./mdriver
 ```
 
 That's it. The benchmarking harness tests throughput, utilization, and correctness.
-
----
-
-## Current Status
-malloc - working  
-free - working  
-coalescing - working  
-splitting - working  
-realloc - in progress (has bugs, working on fixes)
 
 ---
 
