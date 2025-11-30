@@ -247,7 +247,7 @@ my_malloc(size_t size){
 
     void* allocated_s = NULL;
 
-    if(difference >= HEADER + FOOTER){
+    if(difference > HEADER + FOOTER){
         allocated_s = split_block(free_block, aligned_size, difference);
     }
     else{
@@ -458,32 +458,34 @@ my_realloc(void* ptr, size_t size) {
 
     size_t difference = block_size - aligned_size;
 
-    if(block_size > aligned_size && difference >= HEADER + FOOTER){
+    if(block_size > aligned_size && difference > HEADER + FOOTER){
         void* allocated_s = split_block(block, aligned_size, difference);
         return allocated_s;
     }
-    else if(block_size > aligned_size){
+    else if(block_size >= aligned_size){
         return ptr;
     }
 
-    bool left_free = left_free_block(ptr);
-    bool right_free = right_free_block(ptr);
+    /*bool left_free = left_free_block(ptr);*/
+    /*bool right_free = right_free_block(ptr);*/
 
     void* new_s = NULL;
     void* current = NULL;
 
-    if(!left_free && !right_free){
-        current = (void*)((char*)ptr - HEADER);
-    }
-    else if(left_free && right_free){
-        current = coalescing_rl(&free_ptr, ptr);
-    }
-    else if(left_free){
-        current = coalescing_l(&free_ptr, ptr);
-    }
-    else if(right_free){
-        current = coalescing_r(&free_ptr, ptr);
-    }
+    current = (void*)((char*)ptr - HEADER);
+
+    /*if(!left_free && !right_free){*/
+    /*    current = (void*)((char*)ptr - HEADER);*/
+    /*}*/
+    /*else if(left_free && right_free){*/
+    /*    current = coalescing_rl(&free_ptr, ptr);*/
+    /*}*/
+    /*else if(left_free){*/
+    /*    current = coalescing_l(&free_ptr, ptr);*/
+    /*}*/
+    /*else if(right_free){*/
+    /*    current = coalescing_r(&free_ptr, ptr);*/
+    /*}*/
 
     header_block* current_h = (header_block*)current;
     size_t current_size = current_h->size & (~1);
@@ -492,9 +494,8 @@ my_realloc(void* ptr, size_t size) {
     void* current_s = (void*)((char*)current_h + HEADER);
     void* current_e = (void*)((char*)current_f + FOOTER);
 
-
     if(current_size < aligned_size){
-        if(current_e == (char*)mem_heap_hi() + 1){
+        if(current_e == (void*)((char*)mem_heap_hi() + 1)){
             memmove(current_s, ptr, block_size);
             size_t space_needed = aligned_size - current_size;
             mem_sbrk(space_needed);
@@ -506,52 +507,22 @@ my_realloc(void* ptr, size_t size) {
         else{
             new_s = my_malloc(aligned_size);
             memmove(new_s, ptr, block_size);
+            my_free(ptr);
         }
     }
     else{
         memmove(current_s, ptr, block_size);
-        if(current_size - aligned_size >= HEADER + FOOTER){
+        if(current_size - aligned_size > HEADER + FOOTER){
             size_t split_difference = current_size - aligned_size;
             new_s = split_block(current_h, aligned_size, split_difference);
         }
         else{
             current_h->size |= 1;
             current_f->size |= 1;
-            return current_s;
+            new_s = current_s;
         }
     }
+
     return new_s;
 }
 
-// realloc - Implemented simply in terms of malloc and free
-void* my_realloc(void* ptr, size_t size) {
-  void* newptr;
-  size_t copy_size;
-
-  // Allocate a new chunk of memory, and fail if that allocation fails.
-  newptr = my_malloc(size);
-  if (NULL == newptr) {
-    return NULL;
-  }
-
-  // Get the size of the old block of memory.  Take a peek at my_malloc(),
-  // where we stashed this in the SIZE_T_SIZE bytes directly before the
-  // address we returned.  Now we can back up by that many bytes and read
-  // the size.
-  copy_size = *(size_t*)((uint8_t*)ptr - SIZE_T_SIZE);
-
-  // If the new block is smaller than the old one, we have to stop copying
-  // early so that we don't write off the end of the new block of memory.
-  if (size < copy_size) {
-    copy_size = size;
-  }
-
-  // This is a standard library call that performs a simple memory copy.
-  memcpy(newptr, ptr, copy_size);
-
-  // Release the old block.
-  my_free(ptr);
-
-  // Return a pointer to the new block.
-  return newptr;
-}
